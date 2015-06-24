@@ -1,3 +1,4 @@
+#include <string.h>
 #include "config.h"
 
 char *_strim(char *string)
@@ -54,13 +55,13 @@ int _analy_line(char *linetxt,CONFIG_t *config)
     char buf[1024], *pbuf;
     int cnt = 0;
         
-    if(*linetxt == ';')
+    if(*linetxt == '#')
     {
         config->key = (char *)malloc(2);
         config->value = (char *)malloc(strlen(p));
-        memset(config->key,0,sizeof(config->key));
-        memset(config->value,0,sizeof(config->value));
-        strcpy(config->key, ";");
+        memset(config->key,0,2);
+        memset(config->value,0,strlen(p));
+        strcpy(config->key, "#");
         strcpy(config->value,(linetxt + 1));
      }else
      {
@@ -79,7 +80,7 @@ int _analy_line(char *linetxt,CONFIG_t *config)
         cnt = 0;
         while(*p != '\0')
         {
-            if(*p != ';' && *p != '"')
+            if(*p != '"')
             {
                 *pbuf++ = *p;
                 cnt ++;
@@ -117,8 +118,8 @@ int load_config(char *file,CONFIG_t *configs, int size)
             {
                 (configs + cnt)->key = (char *)malloc(strlen(configbuf.key) + 1);
                 (configs + cnt)->value = (char *)malloc(strlen(configbuf.value) + 1);
-                memset((configs + cnt)->key,0,sizeof((configs + cnt)->key));
-                memset((configs + cnt)->value,0,sizeof((configs + cnt)->value));
+                memset((configs + cnt)->key,0,strlen(configbuf.key) + 1);
+                memset((configs + cnt)->value,0,strlen(configbuf.value)+1);
                 strcpy( (configs + cnt)->key, configbuf.key);
                 strcpy( (configs + cnt)->value,configbuf.value);
                 free(configbuf.key);
@@ -160,10 +161,10 @@ int save_config(char *file,CONFIG_t *configs, int size)
     {
         if((configs + cnt)->key != NULL)
         {
-            if(*((configs + cnt)->key) != ';')
+            if(*((configs + cnt)->key) != '#')
             {
                 //printf("%s = \"%s\";\n", (configs + cnt)->key, (configs + cnt)->value);
-                fprintf(fp,"%s = \"%s\";\n", (configs + cnt)->key, (configs + cnt)->value);
+                fprintf(fp,"%s = \"%s\"\n", (configs + cnt)->key, (configs + cnt)->value);
             }
            else
            {

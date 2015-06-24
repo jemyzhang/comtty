@@ -1,7 +1,41 @@
-#include "filedlg.h"
+#include <string.h>
+#include "commonFunc.h"
 
 char dlgofn[1024];
 char dlgsfn[1024];
+
+#if defined(linux)
+#include <stdio.h>
+#include <stdlib.h>
+
+char *fopenDlg(char *title,char *filter, char *initaldir)
+{
+    char cmdstr[256];
+    _init_array(dlgofn, sizeof(dlgofn));
+    sprintf(cmdstr, "/usr/bin/dialog --title \"%s\" --stdout --title \"%s\" --fselect \"%s\" 14 48 >/tmp/dlg.res && cat /tmp/dlg.res", 
+            title, title, initaldir);
+    FILE *fp;
+    fp = popen(cmdstr,"r");
+    if(fp == NULL){
+        return NULL;
+    }
+    while(fgets(dlgofn, sizeof(dlgofn)-1,fp) != NULL){
+
+    }
+    pclose(fp);
+
+    return strlen(dlgofn) > 0 ? dlgofn : NULL;
+}
+
+char *fsaveDlg(char *title,char *filter, char *initaldir)
+{
+    return fopenDlg(title,filter,initaldir);
+}
+#endif
+
+#if defined(__WINDOWS__)
+#include <w32api/windows.h>
+#include <w32api/commdlg.h>
 
 char *fopenDlg(char *title,char *filter, char *initaldir)
 {
@@ -52,3 +86,4 @@ char *fsaveDlg(char *title,char *filter, char *initaldir)
         return(SaveFile.lpstrFile);
     }
 }
+#endif

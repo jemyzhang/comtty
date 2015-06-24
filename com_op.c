@@ -1,3 +1,4 @@
+#include <string.h>
 #include "com_op.h"
 
 int speed_arr[] = { B115200, B57600, B38400, B19200, B9600, B4800, B2400, B1200, B300,};
@@ -19,17 +20,34 @@ int sendcmds(int device, char *cmds)
     {
         switch(*(cmds + i))
         {
-            case '-':
-                usleep(10000);
-                break;
-            case '|':
-                sleep(1);
-                break;
-            case '~':
-                sleep(5);
-                break;
             case '#':
-                sleep(10);
+                if(i < strlen(cmds) - 1)
+                {
+                    i++;
+                    if(cmds[i] == '!')
+                    {
+                        if(i < strlen(cmds) - 1)
+                        {
+                            i++;
+                            switch(cmds[i])
+                            {
+                                 case '-':
+                                     usleep(10000);
+                                     break;
+                                 case '|':
+                                     sleep(1);
+                                     break;
+                                 case '~':
+                                     sleep(5);
+                                     break;
+                                 case '!':
+                                     sleep(10);
+                                     break;
+                            }
+                        }
+
+                    }
+                }
                 break;
             case '\n':
                 ret = sendcmd(device,0x0d);
@@ -51,6 +69,11 @@ int sendcmds(int device, char *cmds)
                 break;
             default:
                 ret = sendcmd(device, *(cmds + i));
+                usleep(1000);
+                if(ret != 1) {
+                    //send again
+                    ret = sendcmd(device, *(cmds + i));
+                }
                 break;
         }
     }
@@ -218,6 +241,7 @@ int set_Parity(int fd,int databits,int stopbits,int parity)
     tcflush(fd,TCIFLUSH);
     options.c_cc[VTIME] = 150; /* ÉèÖÃ³¬Ê±15 seconds*/   
     options.c_cc[VMIN] = 0; /* Update the options and do it NOW */
+    options.c_lflag &= ~ECHOCTL;
     if (tcsetattr(fd,TCSANOW,&options) != 0)   
     { 
         perror("SetupSerial 3");   
@@ -229,6 +253,7 @@ int set_Parity(int fd,int databits,int stopbits,int parity)
 int OpenDev(char *Dev)
 { 
     int fd = open( Dev, O_RDWR );         //&line; O_NOCTTY &line; O_NDELAY
+    printf("%s\n",Dev);
     if (-1 == fd)
     {
         return -1;

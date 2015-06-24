@@ -1,3 +1,4 @@
+#include <string.h>
 #include "pipe_op.h"
 
 int pipe_read(char *pipe,PIPE_INFO_t *pipe_info)

@@ -1,19 +1,24 @@
-EXE = comtty.exe
+ARCH=$(shell uname -s)
+TARGET = comtty
 SRC = comtty.c
 OBJS = _get_key.o com_op.o pipe_op.o logging.o filedlg.o config.o commonFunc.o
 LIBS = libcomtty.a
+ifeq ($(ARCH), cygwin)
 SYS_LIBS = /lib/w32api/libcomdlg32.a
+else
+SYS_LIBS=
+endif
 CC = gcc
-CFLAGS = -Wall
+CFLAGS = -Wall -g
 
-all: $(EXE)
-$(EXE): $(LIBS) $(OBJS)
-	$(CC)  $(SRC) $(LIBS) $(SYS_LIBS) -o $(EXE)
-$(LIBS) : $(OBJS)
+all: $(TARGET)
+$(TARGET): $(LIBS) $(OBJS) $(SRC)
+	$(CC)  $(CFLAGS) $(SRC) $(LIBS) $(SYS_LIBS) -o $(TARGET)
+$(LIBS): $(OBJS)
 	ar ru $@ $?
 .c .o:
 	$(CC) $(CFLAGS) -c -o $*.o $*.c
 clean:
-	rm -rf $(LIBS)
-	rm -rf *.o
-	rm -rf *.exe
+	rm -f $(LIBS)
+	rm -f *.o
+	rm -f $(TARGET)

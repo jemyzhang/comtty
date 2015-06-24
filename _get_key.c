@@ -1,3 +1,4 @@
+#include <string.h>
 #include "_get_key.h"
 
 typedef struct{
@@ -6,24 +7,32 @@ typedef struct{
 }FNKY_t;
 
 FNKY_t fnkey[] ={
-    {"[A",KEYUP},
-    {"[B",KEYDW},
-    {"[C",KEYRT},
-    {"[D",KEYLF},
-    {"[[A",KEYF1},
-    {"[[B",KEYF2},
-    {"[[C",KEYF3},
-    {"[[D",KEYF4},
-    {"[[E",KEYF5},
-    {"[17~",KEYF6},
-    {"[18~",KEYF7},
-    {"[19~",KEYF8},
-    {"[20~",KEYF9},
-    {"[21~",KEYF10},
-    {"[23~",KEYF11},
-    {"[24~",KEYF12},
-    {"[2~",KEYINS},
-    {"[3~",KEYDEL},
+    {"\x1b[A",KEYUP},
+    {"\x1b[B",KEYDW},
+    {"\x1b[C",KEYRT},
+    {"\x1b[D",KEYLF},
+#if defined(linux)
+    {"\x1bOP",KEYF1},
+    {"\x1bOQ",KEYF2},
+    {"\x1bOR",KEYF3},
+    {"\x1bOS",KEYF4},
+    {"\x1b[15~",KEYF5},
+#else
+    {"\x1b[[A",KEYF1},
+    {"\x1b[[B",KEYF2},
+    {"\x1b[[C",KEYF3},
+    {"\x1b[[D",KEYF4},
+    {"\x1b[[E",KEYF5},
+#endif
+    {"\x1b[17~",KEYF6},
+    {"\x1b[18~",KEYF7},
+    {"\x1b[19~",KEYF8},
+    {"\x1b[20~",KEYF9},
+    {"\x1b[21~",KEYF10},
+    {"\x1b[23~",KEYF11},
+    {"\x1b[24~",KEYF12},
+    {"\x1b[2~",KEYINS},
+    {"\x1b[3~",KEYDEL},
     {NULL,0},
 }; 
 
@@ -31,7 +40,7 @@ char _analysis_kcode(char *code)
 {
     FNKY_t *fk = fnkey;
     
-    while(strcmp(code,fk->keycode) != 0 && fk->keycode != NULL) fk++;
+    while(fk->keycode != NULL && strcmp(code,fk->keycode) != 0 ) fk++;
     if(fk->keycode == NULL) return -1;
     else return fk->retval;    
 }
@@ -53,8 +62,11 @@ char _get_key( char echo, char flush )
     char           cbuf[10];
     
     fflush( stdout );
-    tcgetattr( 0, &old_termios );
-    new_termios              = old_termios;
+    tcgetattr( fileno(stdin), &old_termios );
+
+    new_termios = old_termios;
+    cfmakeraw(&new_termios);
+
     /*
      * raw mode, line settings
      */
@@ -88,7 +100,8 @@ char _get_key( char echo, char flush )
      * minimum wait time, 1 * 0.10s
      */
     new_termios.c_cc[VTIME]  = 1;
-    error                    = tcsetattr( 0, OPTIONAL_ACTIONS, &new_termios );
+
+    error = tcsetattr( fileno(stdin), OPTIONAL_ACTIONS, &new_termios );
      _init_array(cbuf,sizeof(cbuf));
     if ( 0 == error )
     {
@@ -100,11 +113,11 @@ char _get_key( char echo, char flush )
     /*
      * restore old settings
      */
-    error                   += tcsetattr( 0, OPTIONAL_ACTIONS, &old_termios );
-    if(error == 0)
+    error += tcsetattr( 0, OPTIONAL_ACTIONS, &old_termios );
+    if(error == 0 && keylen > 0)
     {
         if(keylen == 1) return cbuf[0];
-        return(_analysis_kcode(cbuf+1));
+        return(_analysis_kcode(cbuf));
     }
     else
     {
@@ -157,6 +170,7 @@ int _get_input(char *pdst, char endflag, char sChar, char eChar)
             switch(buf)
             {
                 case BKSPC:
+                case '\x7f':
                     if(csr > 0)
                     {
                         csr --;
@@ -204,13 +218,13 @@ int _get_input(char *pdst, char endflag, char sChar, char eChar)
 
 int _get_input_string(char *pdst)
 {
-    return _get_input(pdst, '\n', ' ', 'z');
+    return _get_input(pdst, '\r', ' ', 'z');
 }
 
 int _get_input_num(void)
 {
     char buf[1024];
-    if(_get_input(buf, '\n', '0', '9') == -1)
+    if(_get_input(buf, '\r', '0', '9') == -1)
     return -1;
     else
     return(atoi(buf));
