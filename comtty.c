@@ -1,7 +1,7 @@
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <string.h>
+#include <sys/ioctl.h>
 #include <signal.h>
+#include <string.h>
 #include "_get_key.h"
 #include "com_op.h"
 #include "pipe_op.h"
@@ -36,14 +36,14 @@ char *pversion[] = {
 };
 
 char *pmenu[] = {
-    "\n-------------MENU-------------\n",
+    "\n---------COMTTY v."VERSION_NUMBER"---------\n",
     "  1.Send file...(F1)\n",
     "  2.Start to record log...(F2)\n",
     "  3.Clear screen...(F3)\n",
     "  4.Run shell command...(F4)\n",
     "  5.Refresh Settings...(F5)\n",
     "  6.About me...\n",
-    "  0.Exit...(Ctrl-Q)\n",
+    "  0.Exit...\n",
     "------------------------------\n",
     "Please select a command: ",
     NULL,
@@ -240,9 +240,9 @@ void cmd_shellmode(PIPE_INFO_t *pipe_info)
 
 void cmd_exit(PIPE_INFO_t *pipe_info)
 {
-                        pipe_info->sig_term = 1; 
-                        pipe_write(CMDPIPE,pipe_info);                   
-                        exit(0);
+    pipe_info->sig_term = 1;
+    pipe_write(CMDPIPE,pipe_info);
+    exit(0);
 }
 
 int __parent_process_func__ get_cmd(int device)
@@ -260,19 +260,10 @@ int __parent_process_func__ get_cmd(int device)
     {
         MSG_ERR("Can not open pipe");
     }
-         
-    //system ("stty -F /dev/tty cbreak");
-        
+
     while(1)
     {
         cmdbuf = _get_key(0,1);
-#if 0
-        if(cmdbuf == -1 && g_speckey != -1)
-        {
-            cmdbuf = g_speckey;
-            g_speckey = -1;
-        }
-#endif
         switch(cmdbuf)
         {
             case 0x0a:
@@ -384,9 +375,9 @@ int __parent_process_func__ get_cmd(int device)
                 cmdbuf = 0;
                 break;
             //case KEYESC:
-            case 0x11: ///Ctrl+Q
-                cmd_exit(pipe_info);
-                break;
+            //case 0x11: ///Ctrl+Q
+            //    cmd_exit(pipe_info);
+            //    break;
             case -1:
                 break;
             default:
@@ -397,9 +388,66 @@ int __parent_process_func__ get_cmd(int device)
     return 0;
 }
 
+struct winsize g_tty_winsz;
+void get_ttywinSize(void)
+{
+    ioctl(fileno(stdin), TIOCGWINSZ, &g_tty_winsz);
+}
+void ttywinSizeChanged(int sig)
+{
+    get_ttywinSize();
+    return;
+}
+
+void check_report_screensize(char c, int dev)
+{
+    static char esc_seq_idx = 0;
+    if(esc_seq_idx > 0)
+    {
+        switch(esc_seq_idx)
+        {
+            case 1:
+                if(c == '[')
+                {
+                    esc_seq_idx ++;
+                }else{
+                    esc_seq_idx = 0;
+                }
+                break;
+            case 2:
+                if(c == '6')
+                {
+                    esc_seq_idx ++;
+                }else{
+                    esc_seq_idx = 0;
+                }
+                break;
+            case 3:
+                if(c == 'n')
+                {
+                    char sendbuf[64];
+                    sprintf(sendbuf, "\x1b[%d;%dR",
+                            g_tty_winsz.ws_row,
+                            g_tty_winsz.ws_col);
+                    sendcmds(dev, sendbuf);
+                    printf("report winsize ok\n");
+                }
+                esc_seq_idx = 0;
+                break;
+            default:
+                esc_seq_idx = 0;
+                break;
+        }
+    }else {
+        if (c == '\x1b') {
+            esc_seq_idx = 1;
+        }
+    }
+    return;
+}
+
 int __child_process_func__ print_msg(int device)
 {
-    char msgbuf[512];
     pid_t pid;
     PIPE_INFO_t *pipe_info;
     
@@ -408,7 +456,7 @@ int __child_process_func__ print_msg(int device)
     pipe_info->sig_term = 0;
     pipe_info->sig_cmdmode = 0;
     pipe_info->log_path = (char *)malloc(1024);
-    
+
     pid = fork();
     if(pid < 0) MSG_ERR("Create pid error\n");
     else if(pid != 0)
@@ -421,26 +469,30 @@ int __child_process_func__ print_msg(int device)
                 free(pipe_info->log_path);
                 free(pipe_info);
                 kill(pid,9);
-                 return(1);
+                return(1);
             }
             sleep(1);
         }
     }
     else
-    {        
-       while(1)
-       {
-            _init_array(msgbuf,sizeof(msgbuf));        
-            if(recvmsg(device,msgbuf,512) > 0)
+    {
+        get_ttywinSize(); //get win size first
+        signal(SIGWINCH, ttywinSizeChanged);
+
+        while(1)
+        {
+            char c = 0;
+            if(recvmsg(device, &c, 1) > 0)
             {
                 pipe_read(CMDPIPE,pipe_info);
-                if(msgbuf > 0 && pipe_info->sig_cmdmode == 0) printf("%s",msgbuf);
+                if(pipe_info->sig_cmdmode == 0) printf("%c",c);
                 fflush(stdout);
-                if(pipe_info->sig_term == 1) return(1);
-                
-                if(pipe_info->log_switch == 1) 
+                check_report_screensize(c, device);
+//                if(pipe_info->sig_term == 1) return(1);
+
+                if(pipe_info->log_switch == 1)
                 {
-                    put_log(pipe_info->log_path,msgbuf, strlen(msgbuf));
+                    put_log(pipe_info->log_path,&c, 1);
                 }
             }
         } 
@@ -464,7 +516,7 @@ int main(int argc, char *argv[])
        exit(0);
     }
      
-    pdevname = (char *)malloc(sizeof(argv[1]) + 5);
+    pdevname = (char *)malloc(strlen(argv[1]) + 6);
     strcpy(pdevname,"/dev/");
     strcat(pdevname,argv[1]);
 
@@ -502,19 +554,18 @@ int main(int argc, char *argv[])
     fdevice = OpenDev(pdevname);
     if (fdevice>0)
     {
-        if(set_speed(fdevice,comconfig.baudrate) < 0)
+        if(setup_serialport(fdevice,
+                    comconfig.baudrate,
+                    comconfig.databits,
+                    comconfig.stopbit,
+                    comconfig.parity) < 0)
         {
-            exit(0);
+            exit(1);
         }
     }
     else
     { 
-        MSG_ERR("Can't Open Serial Port!\n");
-        exit(0);
-    }
-    if (set_Parity(fdevice,comconfig.databits,comconfig.stopbit,comconfig.parity)== FALSE)
-    { 
-        MSG_ERR("Set Parity Error\n");
+        MSG_ERR("Can't Open Serial Port[%s]!\n",pdevname);
         exit(1);
     }
 

@@ -18,18 +18,21 @@ int sendcmds(int device, char *cmds)
     if ( cmds == NULL) return -1;
     for(i = 0; i < strlen(cmds); i ++)
     {
-        switch(*(cmds + i))
+        char c = cmds[i];
+        switch(c)
         {
             case '#':
-                if(i < strlen(cmds) - 1)
+                if(cmds[i+1] != '\0')
                 {
                     i++;
-                    if(cmds[i] == '!')
+                    char c1 = cmds[i];
+                    if(c1 == '!')
                     {
-                        if(i < strlen(cmds) - 1)
+                        if(cmds[i+1] != '\0')
                         {
                             i++;
-                            switch(cmds[i])
+                            char c2 = cmds[i];
+                            switch(c2)
                             {
                                  case '-':
                                      usleep(10000);
@@ -43,10 +46,22 @@ int sendcmds(int device, char *cmds)
                                  case '!':
                                      sleep(10);
                                      break;
+                                default:
+                                    sendcmd(device, c);
+                                    sendcmd(device, c1);
+                                    sendcmd(device, c2);
+                                    break;
                             }
+                        }else{
+                            sendcmd(device, c);
+                            sendcmd(device, c1);
                         }
-
+                    }else{
+                        sendcmd(device, c);
+                        sendcmd(device, c1);
                     }
+                }else{
+                    sendcmd(device, c);
                 }
                 break;
             case '\n':
@@ -68,11 +83,11 @@ int sendcmds(int device, char *cmds)
                  }
                 break;
             default:
-                ret = sendcmd(device, *(cmds + i));
+                ret = sendcmd(device, c);
                 usleep(1000);
                 if(ret != 1) {
                     //send again
-                    ret = sendcmd(device, *(cmds + i));
+                    ret = sendcmd(device, c);
                 }
                 break;
         }
@@ -145,115 +160,118 @@ int sendfile(char *file,int device,int packsize)
      return 0;
 }
 
-int set_speed(int fd, int speed)
+/**
+*@brief   è®¾ç½®ä¸²å£æ•°æ®ä½ï¼Œåœæ­¢ä½å’Œæ•ˆéªŒä½
+*@param  fd     ç±»å‹  int  æ‰“å¼€çš„ä¸²å£æ–‡ä»¶å¥æŸ„
+*@param  databits ç±»å‹  int æ•°æ®ä½   å–å€¼ ä¸º 7 æˆ–è€…8
+*@param  stopbits ç±»å‹  int åœæ­¢ä½   å–å€¼ä¸º 1 æˆ–è€…2
+*@param  parity  ç±»å‹  int  æ•ˆéªŒç±»å‹ å–å€¼ä¸ºN,E,O,,S
+*/
+int setup_serialport(int fd, int speed, int databits,int stopbits,int parity)
 { 
-    int   i;
-    int   status;
-    struct termios   Opt;
-    tcgetattr(fd, &Opt);
+    int i;
+    struct termios options;
+    if(tcgetattr(fd, &options) != 0)
+    {
+        printf("failed to get tc attr\n");
+        return -1;
+    }
+
+    //set to raw mode
+    cfmakeraw(&options);
+
     for ( i= 0;  i < sizeof(speed_arr) / sizeof(int);  i++)
     { 
         if  (speed == name_arr[i])
         { 
-            tcflush(fd, TCIOFLUSH);
-            cfsetispeed(&Opt, speed_arr[i]);
-            cfsetospeed(&Opt, speed_arr[i]);
-            status = tcsetattr(fd, TCSANOW, &Opt);
-        if  (status != 0)
-            perror("tcsetattr fd1");
-        return 0;
+            cfsetispeed(&options, speed_arr[i]);
+            cfsetospeed(&options, speed_arr[i]);
+            break;
         }
-    tcflush(fd,TCIOFLUSH);
     }
-    printf("Do not support Baudrate %d\n",speed);
-    return -1;
-}
+    if(i >= sizeof(speed_arr)/sizeof(speed_arr[0]))
+    {
+        printf("Do not support Baudrate %d\n",speed);
+        return -1;
+    }
 
-/**
-*@brief   ÉèÖÃ´®¿ÚÊı¾İÎ»£¬Í£Ö¹Î»ºÍĞ§ÑéÎ»
-*@param  fd     ÀàĞÍ  int  ´ò¿ªµÄ´®¿ÚÎÄ¼ş¾ä±ú
-*@param  databits ÀàĞÍ  int Êı¾İÎ»   È¡Öµ Îª 7 »òÕß8
-*@param  stopbits ÀàĞÍ  int Í£Ö¹Î»   È¡ÖµÎª 1 »òÕß2
-*@param  parity  ÀàĞÍ  int  Ğ§ÑéÀàĞÍ È¡ÖµÎªN,E,O,,S
-*/
-int set_Parity(int fd,int databits,int stopbits,int parity)
-{ 
-    struct termios options; 
-    if  ( tcgetattr( fd,&options)  !=  0)
-    { 
-        perror("SetupSerial 1");     
-        return(FALSE);  
-    }
     options.c_cflag &= ~CSIZE; 
-    switch (databits) /*ÉèÖÃÊı¾İÎ»Êı*/
+    switch (databits) /*è®¾ç½®æ•°æ®ä½æ•°*/
     {   
-    case 7:     
-        options.c_cflag |= CS7; 
-        break;
-    case 8:     
-        options.c_cflag |= CS8;
-        break;   
-    default:    
-        fprintf(stderr,"Unsupported data size\n"); return (FALSE);  
+        case 7:     
+            options.c_cflag |= CS7; 
+            break;
+        case 8:     
+            options.c_cflag |= CS8;
+            break;   
+        default:    
+            printf("Unsupported data bits\n");
+            return -1;
     }
     switch (parity) 
     {   
-    case 'n':
-    case 'N':    
-        options.c_cflag &= ~PARENB;   /* Clear parity enable */
-        options.c_iflag &= ~INPCK;     /* Enable parity checking */ 
-        break;  
-    case 'o':   
-    case 'O':     
-        options.c_cflag |= (PARODD | PARENB); /* ÉèÖÃÎªÆæĞ§Ñé*/  
-        options.c_iflag |= INPCK;             /* Disnable parity checking */ 
-        break;  
-    case 'e':  
-    case 'E':   
-        options.c_cflag |= PARENB;     /* Enable parity */    
-        options.c_cflag &= ~PARODD;   /* ×ª»»ÎªÅ¼Ğ§Ñé*/     
-        options.c_iflag |= INPCK;       /* Disnable parity checking */
-        break;
-    case 'S': 
-    case 's':  /*as no parity*/   
-        options.c_cflag &= ~PARENB;
-        options.c_cflag &= ~CSTOPB;break;  
-    default:   
-        fprintf(stderr,"Unsupported parity\n");    
-        return (FALSE);  
+        case 'n':
+        case 'N':    
+            options.c_cflag &= ~PARENB;   /* Clear parity enable */
+            options.c_iflag &= ~INPCK;     /* Enable parity checking */ 
+            break;  
+        case 'o':   
+        case 'O':     
+            options.c_cflag |= (PARODD | PARENB); /* è®¾ç½®ä¸ºå¥‡æ•ˆéªŒ*/  
+            options.c_iflag |= INPCK;             /* Disnable parity checking */ 
+            break;  
+        case 'e':  
+        case 'E':   
+            options.c_cflag |= PARENB;     /* Enable parity */    
+            options.c_cflag &= ~PARODD;   /* è½¬æ¢ä¸ºå¶æ•ˆéªŒ*/     
+            options.c_iflag |= INPCK;       /* Disnable parity checking */
+            break;
+        case 'S': 
+        case 's':  /*as no parity*/   
+            options.c_cflag &= ~PARENB;
+            options.c_cflag &= ~CSTOPB;
+            break;  
+        default:   
+            printf("Unsupported parity\n");    
+            return -1;
     }  
-/* ÉèÖÃÍ£Ö¹Î»*/  
+    /* Set input parity option */ 
+    if (parity != 'n')   
+    {
+        options.c_iflag |= INPCK; 
+    }
+    /* è®¾ç½®åœæ­¢ä½*/  
     switch (stopbits)
     {   
-    case 1:    
-        options.c_cflag &= ~CSTOPB;  
-        break;  
-    case 2:    
-        options.c_cflag |= CSTOPB;  
-       break;
-    default:    
-         fprintf(stderr,"Unsupported stop bits\n");  
-         return (FALSE); 
+        case 1:    
+            options.c_cflag &= ~CSTOPB;  
+            break;  
+        case 2:    
+            options.c_cflag |= CSTOPB;  
+            break;
+        default:    
+            printf("Unsupported stop bits\n");  
+            return -1;
     } 
-/* Set input parity option */ 
-    if (parity != 'n')   
-        options.c_iflag |= INPCK; 
+
+    tcflush(fd,TCIOFLUSH);
     tcflush(fd,TCIFLUSH);
-    options.c_cc[VTIME] = 150; /* ÉèÖÃ³¬Ê±15 seconds*/   
+
+    options.c_cc[VTIME] = 150; /* è®¾ç½®è¶…æ—¶15 seconds*/   
     options.c_cc[VMIN] = 0; /* Update the options and do it NOW */
-    options.c_lflag &= ~ECHOCTL;
-    if (tcsetattr(fd,TCSANOW,&options) != 0)   
+
+    if (tcsetattr(fd,TCSANOW,&options) != 0)
     { 
-        perror("SetupSerial 3");   
-        return (FALSE);  
+        printf("failed setup serial port\n");   
+        return -1;
     } 
-    return (TRUE);  
+
+    return 0;
 }
 
 int OpenDev(char *Dev)
 { 
     int fd = open( Dev, O_RDWR );         //&line; O_NOCTTY &line; O_NDELAY
-    printf("%s\n",Dev);
     if (-1 == fd)
     {
         return -1;

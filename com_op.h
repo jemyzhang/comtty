@@ -19,8 +19,7 @@ typedef struct {
     int parity;
 }COM_CONFIG_t;
 
-int set_speed(int fd, int speed);
-int set_Parity(int fd,int databits,int stopbits,int parity);
+int setup_serialport(int fd, int speed, int databits,int stopbits,int parity);
 int OpenDev(char *Dev);
 int sendcmd(int device, char cmd);
 int sendcmds(int device, char *cmd);

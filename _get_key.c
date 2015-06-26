@@ -54,55 +54,64 @@ char _analysis_kcode(char *code)
  * characters, and with or without flushing pre-existing buffered input
  * before blocking.
  */
-char _get_key( char echo, char flush )
+char _get_key(char echo, char flush)
 {
-    struct termios old_termios, new_termios;
+    struct termios old_termios;
+    struct termios termios;
     int OPTIONAL_ACTIONS;
-    int            error, keylen;
-    char           cbuf[10];
-    
-    fflush( stdout );
-    tcgetattr( fileno(stdin), &old_termios );
+    int error, keylen = 0;
+    char cbuf[10];
 
-    new_termios = old_termios;
-    cfmakeraw(&new_termios);
+    fflush( stdout );
+
+    tcgetattr(fileno(stdin), &old_termios );
+
+    termios = old_termios;
 
     /*
      * raw mode, line settings
      */
-    new_termios.c_lflag     &= ~ICANON;
+    cfmakeraw(&termios);
+    termios.c_iflag |= (ICRNL);
+    termios.c_oflag |= (OPOST|ONLCR);
+
     if(echo)
-    /*
-     * enable echoing the char as it is typed
-     */
-    new_termios.c_lflag     |=  ECHO;
-    else
-    /*
-     * disable echoing the char as it is typed
-     */
-    new_termios.c_lflag     &= ~ECHO;
+    {
+        /*
+         * enable echoing the char as it is typed
+         */
+        termios.c_lflag |=  ECHO;
+    } else{
+        /*
+         * disable echoing the char as it is typed
+         */
+        termios.c_lflag &= ~ECHO;
+    }
     if(flush)
-    /*
-     * use this to flush the input buffer before blocking for new input
-     */
-    OPTIONAL_ACTIONS = TCSAFLUSH;
-    else
-    /*
-     * use this to return a char from the current input buffer, or block
-     * if no input is waiting
-     */
-    OPTIONAL_ACTIONS = TCSANOW;
+    {
+        /*
+         * use this to flush the input buffer before blocking for new input
+         */
+        OPTIONAL_ACTIONS = TCSAFLUSH;
+    } else{
+        /*
+         * use this to return a char from the current input buffer, or block
+         * if no input is waiting
+         */
+        OPTIONAL_ACTIONS = TCSANOW;
+    }
     /*
      * minimum chars to wait for
      */
-    new_termios.c_cc[VMIN]   = 1;
+    termios.c_cc[VMIN] = 1;
     /*
      * minimum wait time, 1 * 0.10s
      */
-    new_termios.c_cc[VTIME]  = 1;
+    termios.c_cc[VTIME] = 1;
 
-    error = tcsetattr( fileno(stdin), OPTIONAL_ACTIONS, &new_termios );
-     _init_array(cbuf,sizeof(cbuf));
+    error = tcsetattr( fileno(stdin), OPTIONAL_ACTIONS, &termios );
+
+    _init_array(cbuf,sizeof(cbuf));
     if ( 0 == error )
     {
         /*
@@ -113,7 +122,7 @@ char _get_key( char echo, char flush )
     /*
      * restore old settings
      */
-    error += tcsetattr( 0, OPTIONAL_ACTIONS, &old_termios );
+    error = tcsetattr( fileno(stdin), OPTIONAL_ACTIONS, &old_termios );
     if(error == 0 && keylen > 0)
     {
         if(keylen == 1) return cbuf[0];
@@ -129,7 +138,7 @@ int _get_input(char *pdst, char endflag, char sChar, char eChar)
 {
     char buf;
     int cnt = 0, csr = 0;
-    char ins_status = 0;
+    int ins_status = 0;
     int i;
     //system ("stty -F /dev/tty cbreak");
     fflush(stdout);
@@ -191,7 +200,7 @@ int _get_input(char *pdst, char endflag, char sChar, char eChar)
                 case KEYDEL:
                     break;
                 case KEYINS:
-                     ins_status = ~ins_status & 1;
+                     ins_status = ins_status > 0 ? 0 : 1;
                      break;              
                 case KEYLF:
                     if(csr >= 1) {csr --; printf("\33[D");};
@@ -211,20 +220,19 @@ int _get_input(char *pdst, char endflag, char sChar, char eChar)
         fflush(stdout);
     }
     *(pdst + cnt) = '\0';
-    //system ("stty -F /dev/tty -cbreak");
     if(cnt == 0) return -1;
     return 0;
 }
 
 int _get_input_string(char *pdst)
 {
-    return _get_input(pdst, '\r', ' ', 'z');
+    return _get_input(pdst, '\n', ' ', 'z');
 }
 
 int _get_input_num(void)
 {
     char buf[1024];
-    if(_get_input(buf, '\r', '0', '9') == -1)
+    if(_get_input(buf, '\n', '0', '9') == -1)
     return -1;
     else
     return(atoi(buf));
