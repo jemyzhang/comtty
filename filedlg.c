@@ -12,8 +12,11 @@ char *fopenDlg(char *title,char *filter, char *initaldir)
 {
     char cmdstr[256];
     _init_array(dlgofn, sizeof(dlgofn));
-    sprintf(cmdstr, "/usr/bin/dialog --title \"%s\" --stdout --title \"%s\" --fselect \"%s\" 14 48 >/tmp/dlg.res && cat /tmp/dlg.res", 
-            title, title, initaldir);
+    sprintf(cmdstr,
+            "/usr/bin/zenity --title '%s' \\" \
+            "--file-selection \\" \
+            "--filename='%s'/ --file-filter='%s'",
+            title, initaldir, filter);
     FILE *fp;
     fp = popen(cmdstr,"r");
     if(fp == NULL){
@@ -29,7 +32,24 @@ char *fopenDlg(char *title,char *filter, char *initaldir)
 
 char *fsaveDlg(char *title,char *filter, char *initaldir)
 {
-    return fopenDlg(title,filter,initaldir);
+    char cmdstr[256];
+    _init_array(dlgsfn, sizeof(dlgsfn));
+    sprintf(cmdstr,
+            "/usr/bin/zenity --title '%s' \\" \
+            "--file-selection --save --confirm-overwrite \\" \
+            "--filename='%s'/ --file-filter='%s'",
+            title, initaldir, filter);
+    FILE *fp;
+    fp = popen(cmdstr,"r");
+    if(fp == NULL){
+        return NULL;
+    }
+    while(fgets(dlgsfn, sizeof(dlgsfn)-1,fp) != NULL){
+
+    }
+    pclose(fp);
+
+    return strlen(dlgsfn) > 0 ? dlgsfn : NULL;
 }
 #endif
 

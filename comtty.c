@@ -186,7 +186,14 @@ void cmd_logfile(PIPE_INFO_t *pipe_info)
     switch(pipe_info->log_switch)
      {
          case 0:
-             pipe_info->log_path = fsaveDlg("Save Log","All(*.*)\0*.*\0Text(*.txt)\0*.txt\0","/tmp");
+         {
+             char curdir[256];
+             getcwd(curdir,sizeof(curdir));
+             #if defined(linux)
+             pipe_info->log_path = fsaveDlg("Save Log","*.* *.txt *.log",curdir);
+             #else
+             pipe_info->log_path = fsaveDlg("Save Log","All(*.*)\0*.*\0Text(*.txt)\0*.txt\0",curdir);
+             #endif
              if(pipe_info->log_path == NULL)
              {
                  MSG_INFO("Abort logging...\n");
@@ -200,6 +207,7 @@ void cmd_logfile(PIPE_INFO_t *pipe_info)
                  MSG_INFO("Log started.\n");
              }
              break;
+         }
          case 1:
              pipe_info->log_switch = 0;
              pipe_write(CMDPIPE,pipe_info);
