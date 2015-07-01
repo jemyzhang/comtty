@@ -1,4 +1,5 @@
 #include "commonFunc.h"
+#include <string.h>
 
 long get_file_size(FILE *fp) {
     long size;
@@ -10,8 +11,6 @@ long get_file_size(FILE *fp) {
 
 void _init_array(char *buf,int size)
 {
-    int i;
-    for( i = 0; i < size; i++) *buf++ = 0;
-    return;
+    memset(buf,0,size);
 }
 

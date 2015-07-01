@@ -36,7 +36,7 @@ FNKY_t fnkey[] ={
     {NULL,0},
 }; 
 
-char _analysis_kcode(char *code)
+char gen_fake_key(char *code)
 {
     FNKY_t *fk = fnkey;
     
@@ -45,22 +45,12 @@ char _analysis_kcode(char *code)
     else return fk->retval;    
 }
 
-/*
- * getch() -- a blocking single character input from stdin
- *
- * Returns a character, or -1 if an input error occurs
- *
- * Conditionals allow compiling with or without echoing of the input
- * characters, and with or without flushing pre-existing buffered input
- * before blocking.
- */
-char _get_key(char echo, char flush)
+int read_input_seq(char echo, char flush, char *cbuf, size_t size)
 {
     struct termios old_termios;
     struct termios termios;
     int OPTIONAL_ACTIONS;
     int error, keylen = 0;
-    char cbuf[10];
 
     fflush( stdout );
 
@@ -111,43 +101,40 @@ char _get_key(char echo, char flush)
 
     error = tcsetattr( fileno(stdin), OPTIONAL_ACTIONS, &termios );
 
-    _init_array(cbuf,sizeof(cbuf));
+    keylen = 0;
     if ( 0 == error )
     {
         /*
          * get char from stdin
          */
-        keylen  = read( 0, &cbuf, sizeof(cbuf) );
+        keylen  = read( 0, cbuf, size );
     }
     /*
      * restore old settings
      */
-    error = tcsetattr( fileno(stdin), OPTIONAL_ACTIONS, &old_termios );
-    if(error == 0 && keylen > 0)
-    {
-        if(keylen == 1) return cbuf[0];
-        return(_analysis_kcode(cbuf));
-    }
-    else
-    {
-        return( -1);
-    }
-}  /* end of getch */
+    tcsetattr( fileno(stdin), OPTIONAL_ACTIONS, &old_termios );
+    return keylen;
+}
 
 int _get_input(char *pdst, char endflag, char sChar, char eChar)
 {
-    char buf;
+    char ch;
     int cnt = 0, csr = 0;
     int ins_status = 0;
     int i;
-    //system ("stty -F /dev/tty cbreak");
-    fflush(stdout);
-    while(1)//buf != endflag)
+    char buf[5];
+    while(1)
     {
-        buf = _get_key(0,1);
-        if(buf == endflag) break;
+        int len = read_input_seq(0, 1, buf, 5);
+        if(len <= 0) continue;
+        if(len > 1){
+            ch = gen_fake_key(buf);
+        } else{
+            ch = buf[0];
+        }
+        if(ch == endflag) break;
         
-        if((sChar <= buf && buf <=eChar) )
+        if((sChar <= ch && ch <=eChar) )
         {
             if(csr != cnt && ins_status == 0)
             {
@@ -157,7 +144,7 @@ int _get_input(char *pdst, char endflag, char sChar, char eChar)
                     }
                     
             }
-            *(pdst + csr) = buf;
+            *(pdst + csr) = ch;
             csr ++;
             if(ins_status == 0 || csr >= cnt) cnt++;
             *(pdst + cnt) = '\0';
@@ -176,7 +163,7 @@ int _get_input(char *pdst, char endflag, char sChar, char eChar)
         }
         else
         {
-            switch(buf)
+            switch(ch)
             {
                 case BKSPC:
                 case '\x7f':

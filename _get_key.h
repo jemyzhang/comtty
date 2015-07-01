@@ -34,7 +34,9 @@ enum {
     KEYDEL,
 };
 
-char _get_key( char echo, char flush);
+int read_input_seq(char echo, char flush, char *cbuf, size_t size);
+char gen_fake_key(char *code);
+
 int _get_input(char *pdst, char endflag, char sChar, char eChar);
 int _get_input_string(char *pdst);
 int _get_input_num(void);

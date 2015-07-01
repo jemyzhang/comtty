@@ -255,7 +255,8 @@ void cmd_exit(PIPE_INFO_t *pipe_info)
 
 int __parent_process_func__ get_cmd(int device)
 {
-    char cmdbuf;
+    #define INPUT_BUF_SIZE 4096
+    char* input_buf = (char *)malloc(INPUT_BUF_SIZE);
     PIPE_INFO_t *pipe_info;
     int ret;
     
@@ -269,25 +270,51 @@ int __parent_process_func__ get_cmd(int device)
         MSG_ERR("Can not open pipe");
     }
 
-    while(1)
-    {
-        cmdbuf = _get_key(0,1);
-        switch(cmdbuf)
-        {
-            case 0x0a:
-                sendcmd(device,0x0d);
+    while(1) {
+        int len = read_input_seq(0, 1, input_buf, INPUT_BUF_SIZE);
+        if (len == 0) {
+            continue;
+        }
+        char fake_key = input_buf[0];
+        if(len > 1) fake_key = gen_fake_key(input_buf);
+        switch(fake_key) {
+            case KEYF1:
+                cmd_transfile(device);
                 break;
+            case KEYF2:
+                cmd_logfile(pipe_info);
+                break;
+            case KEYF3:
+                printf("\33[2J");
+                break;
+            case KEYF4:
+                cmd_shellmode(pipe_info);
+                break;
+            case KEYF5:
+                ret = reload_config(CONFIG_FN, config_g,
+                                    sizeof(config_g) / sizeof(CONFIG_t));
+                MSG_INFO("%s reload configurations...\n", (ret != -1 ? "Successfully" : "Failed"));
+                break;
+            case KEYF6:
+            case KEYF7:
+            case KEYF8:
+            case KEYF9:
+            case KEYF10:
+            case KEYF11:
+            case KEYF12: {
+                char shortcut_key[3] = {'F','0','\0'};
+                shortcut_key[1] = '6' + KEYF6 - fake_key;
+                send_shortcuts(device, shortcut_key);
+                break;
+            }
             case 0x12: //Ctrl+R
-                if(pipe_info->log_switch == 1) 
-                {
+                if (pipe_info->log_switch == 1) {
                     pmenu[2] = "  2.Stop record log...(F2)\n";
-                }else
-                {
+                } else {
                     pmenu[2] = "  2.Start to record log...(F2)\n";
-                }                
+                }
                 disp_dbg_menu();
-                switch(_get_input_num())
-                {
+                switch (_get_input_num()) {
                     case 0:
                         printf("\n");
                         cmd_exit(pipe_info);
@@ -306,14 +333,14 @@ int __parent_process_func__ get_cmd(int device)
                         break;
                     case 5:
                         ret = reload_config(CONFIG_FN, config_g,
-                                                        sizeof(config_g)/sizeof(CONFIG_t));
-                        MSG_INFO("%s reload configurations...\n",(ret != -1 ? "Successfully" : "Failed"));
+                                            sizeof(config_g) / sizeof(CONFIG_t));
+                        MSG_INFO("%s reload configurations...\n", (ret != -1 ? "Successfully" : "Failed"));
                         break;
                     case 6:
                         disp_version();
                         break;
                     case -1:
-        
+
                         MSG_INFO("Abort Command Mode...\n");
                         break;
                     default:
@@ -321,75 +348,8 @@ int __parent_process_func__ get_cmd(int device)
                         break;
                 }
                 break;
-            case KEYUP:
-                sendcmds(device,"\x1b[A");
-                //send_shortcuts(device,"UP");
-                break;
-            case KEYDW:
-                sendcmds(device,"\x1b[B");
-                //send_shortcuts(device,"DOWN");
-                break;
-            case KEYRT:
-                sendcmds(device,"\x1b[C");
-                //send_shortcuts(device,"RIGHT");
-                break;
-            case KEYLF:
-                sendcmds(device,"\x1b[D");
-                //send_shortcuts(device,"LEFT");
-                break;
-            case KEYF1:
-                sendcmds(device,"1-\n-1-\n");            
-                cmd_transfile(device);
-                break;
-            case KEYF2:
-                cmd_logfile(pipe_info);
-                break;
-            case KEYF3:
-                 printf("\33[2J");
-                 break;
-            case KEYF4:
-                cmd_shellmode(pipe_info);
-                break;
-            case KEYF5:
-                ret = reload_config(CONFIG_FN, config_g,
-                                                sizeof(config_g)/sizeof(CONFIG_t));
-                MSG_INFO("%s reload configurations...\n",(ret != -1 ? "Successfully" : "Failed"));
-                break;
-            case KEYF6:
-                send_shortcuts(device,"F6");
-                break;
-            case KEYF7:
-                send_shortcuts(device,"F7");
-                break;
-            case KEYF8:
-                send_shortcuts(device,"F8");
-                break;
-            case KEYF9:
-                send_shortcuts(device,"F9");
-                break;
-            case KEYF10:
-                send_shortcuts(device,"F10");
-                break;
-            case KEYF11:
-                send_shortcuts(device,"F11");
-                break;
-            case KEYF12:
-                send_shortcuts(device,"F12");
-                break;
-            case KEYINS:
-            case BKSPC:
-                break;
-            case KEYDEL:
-                cmdbuf = 0;
-                break;
-            //case KEYESC:
-            //case 0x11: ///Ctrl+Q
-            //    cmd_exit(pipe_info);
-            //    break;
-            case -1:
-                break;
             default:
-                sendcmd(device,cmdbuf);
+                sendbytes(device, input_buf, len);
                 break;
         }
     }
