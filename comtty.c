@@ -397,7 +397,7 @@ void check_report_screensize(char c, int dev)
                     sprintf(sendbuf, "\x1b[%d;%dR",
                             g_tty_winsz.ws_row,
                             g_tty_winsz.ws_col);
-                    sendcmds(dev, sendbuf);
+                    sendbytes(dev, sendbuf, strlen(sendbuf));
                     printf("report winsize ok\n");
                 }
                 esc_seq_idx = 0;
