@@ -20,11 +20,10 @@ typedef struct {
 }COM_CONFIG_t;
 
 int setup_serialport(int fd, int speed, int databits,int stopbits,int parity);
-int OpenDev(char *Dev);
-int sendcmd(int device, char cmd);
+int sendchar(int device, char cmd);
 int sendcmds(int device, char *cmd);
 int sendbytes(int device, char *pbytes, int size);
-int recvmsg(int device, char *pool,int size);
+int readbytes(int device, char *pool, int size);
 int sendfile(char *file,int device,int packsize);
 
 #endif /*_COM_OP_H*/

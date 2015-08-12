@@ -4,12 +4,27 @@
 int speed_arr[] = { B115200, B57600, B38400, B19200, B9600, B4800, B2400, B1200, B300,};
 int name_arr[] = { 115200, 57600, 38400,  19200,  9600,  4800,  2400,  1200,  300};
 
-int sendcmd(int device, char cmd)
+int sendchar(int device, char cmd)
 {
      int ret = 0;
      ret = write(device,&cmd,sizeof(cmd));
      return ret;
 }
+
+int sendbytes(int device, char *pbytes, int size)
+{
+    int ret = 0;
+    ret = write(device,pbytes,size);
+    return ret;
+}
+
+int readbytes(int device, char *pool, int size)
+{
+    int ret = 0;
+    ret = read(device,pool,size);
+    return ret;
+}
+
 
 int sendcmds(int device, char *cmds)
 {
@@ -47,25 +62,25 @@ int sendcmds(int device, char *cmds)
                                      sleep(10);
                                      break;
                                 default:
-                                    sendcmd(device, c);
-                                    sendcmd(device, c1);
-                                    sendcmd(device, c2);
+                                    sendchar(device, c);
+                                    sendchar(device, c1);
+                                    sendchar(device, c2);
                                     break;
                             }
                         }else{
-                            sendcmd(device, c);
-                            sendcmd(device, c1);
+                            sendchar(device, c);
+                            sendchar(device, c1);
                         }
                     }else{
-                        sendcmd(device, c);
-                        sendcmd(device, c1);
+                        sendchar(device, c);
+                        sendchar(device, c1);
                     }
                 }else{
-                    sendcmd(device, c);
+                    sendchar(device, c);
                 }
                 break;
             case '\n':
-                ret = sendcmd(device,0x0d);
+                ret = sendchar(device, 0x0d);
                 break;
             case '\\':
                 if( i <  strlen(cmds) -1)
@@ -74,39 +89,25 @@ int sendcmds(int device, char *cmds)
                     switch(*(cmds + i))
                     {
                         case 'n':
-                            ret = sendcmd(device,0x0d);
+                            ret = sendchar(device, 0x0d);
                             break;
                         default:
-                            ret = sendcmd(device, *(cmds + i));
+                            ret = sendchar(device, *(cmds + i));
                             break;
                      }
                  }
                 break;
             default:
-                ret = sendcmd(device, c);
+                ret = sendchar(device, c);
                 usleep(1000);
                 if(ret != 1) {
                     //send again
-                    ret = sendcmd(device, c);
+                    ret = sendchar(device, c);
                 }
                 break;
         }
     }
     return ret;  
-}
-
-int sendbytes(int device, char *pbytes, int size)
-{
-    int ret = 0;
-    ret = write(device,pbytes,size);
-    return ret;    
-}
-
-int recvmsg(int device, char *pool,int size)
-{
-    int ret = 0;
-    ret = read(device,pool,size);
-    return ret;        
 }
 
 int sendfile(char *file,int device,int packsize)
@@ -269,13 +270,3 @@ int setup_serialport(int fd, int speed, int databits,int stopbits,int parity)
     return 0;
 }
 
-int OpenDev(char *Dev)
-{ 
-    int fd = open( Dev, O_RDWR );         //&line; O_NOCTTY &line; O_NDELAY
-    if (-1 == fd)
-    {
-        return -1;
-    }
-
-    return fd;
-}
