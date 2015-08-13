@@ -3,6 +3,9 @@
 #include <sys/wait.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <sys/inotify.h>
+#include <sys/poll.h>
+#include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -15,15 +18,15 @@
 
 #define CONFIG_FN "comtty.cfg"
 #define PACKSIZE 256
-#define VERSION_NUMBER "1.5"
+#define VERSION_NUMBER "1.6"
 
 #define MSG_INFO(fmt,...) do {\
-    printf("\n\x1b[32m[INFO] "fmt,  ##__VA_ARGS__);\
+    printf("\n\x1b[32m"fmt,  ##__VA_ARGS__);\
     printf("\x1b[0m");\
 }while(0)
 
 #define MSG_ERR(fmt,...) do {\
-    printf("\n\x1b[31m[ERR] "fmt, ##__VA_ARGS__);\
+    printf("\n\x1b[31m"fmt, ##__VA_ARGS__);\
     printf("\x1b[0m");\
 }while(0)
 
@@ -32,7 +35,7 @@ typedef struct {
     char sig_blockoutput;
     char log_switch;
     char log_path[1024];
-}PIPE_INFO_t;
+} CTRL_INFO_t;
 
 static int gs_shmid;
 
@@ -40,7 +43,7 @@ char *pversion[] = {
         "\n------Software Information------\n",
         "   Version: "VERSION_NUMBER"\n",
         "   Create date: 2007.02.16\n",
-        "   Last update: 2015.08.12\n",
+        "   Last update: 2015.08.13\n",
         "   Author: JEMYZHANG\n",
         "-------------------------------\n\n",
         NULL,
@@ -192,9 +195,9 @@ void cmd_transfile(int device)
     }
 }
 
-void cmd_logfile(PIPE_INFO_t *pipe_info)
+void cmd_logfile(CTRL_INFO_t *ctrl_info)
 {
-    switch(pipe_info->log_switch)
+    switch(ctrl_info->log_switch)
     {
         case 0:
         {
@@ -205,16 +208,16 @@ void cmd_logfile(PIPE_INFO_t *pipe_info)
             if(fpath == NULL) {
                 MSG_INFO("Abort logging...\n");
             } else {
-                strcpy(pipe_info->log_path, fpath);
-                MSG_INFO("Save to log file: %s\n",pipe_info->log_path);
-                pipe_info->log_switch = 1;
-                create_log(pipe_info->log_path);
+                strcpy(ctrl_info->log_path, fpath);
+                MSG_INFO("Save to log file: %s\n",ctrl_info->log_path);
+                ctrl_info->log_switch = 1;
+                create_log(ctrl_info->log_path);
                 MSG_INFO("Log started.\n");
             }
             break;
         }
         case 1:
-            pipe_info->log_switch = 0;
+            ctrl_info->log_switch = 0;
             MSG_INFO("Log stopped\n");
             break;
         default:
@@ -222,48 +225,42 @@ void cmd_logfile(PIPE_INFO_t *pipe_info)
     }
 }
 
-void cmd_shellmode(PIPE_INFO_t *pipe_info)
+void cmd_shellmode(CTRL_INFO_t *ctrl_info)
 {
     char syscmd[1024];
 
-    pipe_info->sig_blockoutput = 1;
-    printf("\nEnter shell command mode:\n");
+    ctrl_info->sig_blockoutput = 1;
+    MSG_INFO("\nEnter shell command mode:\n");
     printf("cmd@tty$ ");
-    while(pipe_info->sig_blockoutput == 1)
+    while(ctrl_info->sig_blockoutput == 1)
     {
         _init_array(syscmd,sizeof(syscmd));
         if(_get_input_string(syscmd) == -1 || strcmp(syscmd,"exit") == 0)
         {
-            printf("\nExit shell command mode...\n");
-            pipe_info->sig_blockoutput = 0;
+            MSG_INFO("\nExit shell command mode...\n");
+            ctrl_info->sig_blockoutput = 0;
         }
         else
         {
             printf("\n");
             system(syscmd);
-            pipe_info->sig_blockoutput = 1;
+            ctrl_info->sig_blockoutput = 1;
             printf("cmd@tty$ ");
             fflush(stdout);
         }
     }
 }
 
-void cmd_exit(PIPE_INFO_t *pipe_info)
-{
-    pipe_info->sig_term = 1;
-//    exit(0);
-}
-
-int __parent_process_func__ get_cmd(int device)
+int __parent_process_func__ input_processor(int device)
 {
 #define INPUT_BUF_SIZE 4096
     char* input_buf = (char *)malloc(INPUT_BUF_SIZE);
     int ret;
-    PIPE_INFO_t *pipe_info;
-    pipe_info = (PIPE_INFO_t *)shmat(gs_shmid, 0, 0);
-    memset(pipe_info, 0, sizeof(PIPE_INFO_t));
+    CTRL_INFO_t *ctrl_info;
+    ctrl_info = (CTRL_INFO_t *)shmat(gs_shmid, 0, 0);
+    memset(ctrl_info, 0, sizeof(CTRL_INFO_t));
 
-    while(1) {
+    while(!ctrl_info->sig_term) {
         int len = read_input_seq(0, 1, input_buf, INPUT_BUF_SIZE);
         if (len == 0) {
             continue;
@@ -275,13 +272,13 @@ int __parent_process_func__ get_cmd(int device)
                 cmd_transfile(device);
                 break;
             case KEYF2:
-                cmd_logfile(pipe_info);
+                cmd_logfile(ctrl_info);
                 break;
             case KEYF3:
                 printf("\33[2J");
                 break;
             case KEYF4:
-                cmd_shellmode(pipe_info);
+                cmd_shellmode(ctrl_info);
                 break;
             case KEYF5:
                 ret = reload_config(CONFIG_FN, config_g,
@@ -301,8 +298,8 @@ int __parent_process_func__ get_cmd(int device)
                 break;
             }
             case 0x12: //Ctrl+R
-                pipe_info->sig_blockoutput = 1;
-                if (pipe_info->log_switch == 1) {
+                ctrl_info->sig_blockoutput = 1;
+                if (ctrl_info->log_switch == 1) {
                     pmenu[2] = "  2.Stop record log...(F2)\n";
                 } else {
                     pmenu[2] = "  2.Start to record log...(F2)\n";
@@ -311,19 +308,19 @@ int __parent_process_func__ get_cmd(int device)
                 switch (_get_input_num()) {
                     case 0:
                         printf("\n");
-                        cmd_exit(pipe_info);
-                        goto exit;
+                        ctrl_info->sig_term = 1;
+                        break;
                     case 1:
                         cmd_transfile(device);
                         break;
                     case 2:
-                        cmd_logfile(pipe_info);
+                        cmd_logfile(ctrl_info);
                         break;
                     case 3:
                         printf("\33[2J");
                         break;
                     case 4:
-                        cmd_shellmode(pipe_info);
+                        cmd_shellmode(ctrl_info);
                         break;
                     case 5:
                         ret = reload_config(CONFIG_FN, config_g,
@@ -340,15 +337,14 @@ int __parent_process_func__ get_cmd(int device)
                         MSG_ERR("Command Error!\n");
                         break;
                 }
-                pipe_info->sig_blockoutput = 0;
+                ctrl_info->sig_blockoutput = 0;
                 break;
             default:
                 sendbytes(device, input_buf, len);
                 break;
         }
     }
-    exit:
-        shmdt(pipe_info);
+    shmdt(ctrl_info);
     return 0;
 }
 
@@ -409,11 +405,11 @@ void check_report_screensize(char c, int dev)
     return;
 }
 
-int __child_process_func__ print_msg(int device)
+int __child_process_func__ port_reader(int device)
 {
-    PIPE_INFO_t *pipe_info;
-    pipe_info = (PIPE_INFO_t *)shmat(gs_shmid, 0, 0);
-    memset(pipe_info, 0, sizeof(PIPE_INFO_t));
+    CTRL_INFO_t *ctrl_info;
+    ctrl_info = (CTRL_INFO_t *)shmat(gs_shmid, 0, 0);
+    memset(ctrl_info, 0, sizeof(CTRL_INFO_t));
 
 
     get_ttywinSize(); //get win size first
@@ -439,9 +435,9 @@ int __child_process_func__ print_msg(int device)
             fcntl(buf_fds[0], F_SETFL, flags | O_NONBLOCK);
             close(buf_fds[1]); //close write
         }
-        while(!pipe_info->sig_term) {
+        while(!ctrl_info->sig_term) {
             char c = 0;
-            if (buf_ena && pipe_info->sig_blockoutput == 0) {
+            if (buf_ena && ctrl_info->sig_blockoutput == 0) {
                 while (read(buf_fds[0], &c, 1) > 0) {
                     write(STDOUT_FILENO, &c, 1);
                 }
@@ -450,13 +446,13 @@ int __child_process_func__ print_msg(int device)
         }
         close(buf_fds[0]);
     }else {
-        while (!pipe_info->sig_term) {
+        while (!ctrl_info->sig_term) {
             char c = 0;
             if(buf_ena) {
                 close(buf_fds[0]); //close read
             }
             if (readbytes(device, &c, 1) > 0) {
-                if (pipe_info->sig_blockoutput == 0) {
+                if (ctrl_info->sig_blockoutput == 0) {
                     write(STDOUT_FILENO, &c, 1);
                 } else {
                     if(buf_ena) {
@@ -466,8 +462,8 @@ int __child_process_func__ print_msg(int device)
                 }
                 check_report_screensize(c, device);
 
-                if (pipe_info->log_switch == 1) {
-                    put_log(pipe_info->log_path, &c, 1);
+                if (ctrl_info->log_switch == 1) {
+                    put_log(ctrl_info->log_path, &c, 1);
                 }
             }
             usleep(10);
@@ -476,10 +472,84 @@ int __child_process_func__ print_msg(int device)
         wait(NULL);
     }
 
-    shmdt(pipe_info);
+    shmdt(ctrl_info);
 
     return 0;
 
+}
+
+void port_connection_monitor(const char* pdevname)
+{
+    int in_fd = inotify_init1(IN_NONBLOCK);
+    if(in_fd < 0)
+    {
+        perror("inotify_init1\n");
+        return;
+    }
+
+    int wd = inotify_add_watch(in_fd, pdevname, IN_DELETE_SELF|IN_ATTRIB);
+    if(wd < 0)
+    {
+        fprintf(stderr, "can not watch %s\n", pdevname);
+        perror("inotify_add_watch");
+        close(in_fd);
+        return;
+    }
+
+    struct pollfd fd;
+    nfds_t nfds;
+    int pollnum;
+    fd.fd = in_fd;
+    fd.events= POLLIN;
+    nfds = 1;
+    CTRL_INFO_t *ctrl_info = (CTRL_INFO_t *)shmat(gs_shmid, 0, 0);
+
+    while(!ctrl_info->sig_term)
+    {
+        pollnum = poll(&fd, nfds, 100);
+        if(pollnum == -1)
+        {
+            if(errno == EINTR)
+                continue;
+            perror("poll");
+            close(in_fd);
+            return;
+        }
+        if(pollnum > 0)
+        {
+            if(fd.events & POLLIN)
+            {
+                char buf[4096];
+                const struct inotify_event *event;
+                ssize_t len;
+                char *ptr;
+                while(!ctrl_info->sig_term)
+                {
+                    len = read(in_fd, buf, sizeof(buf));
+                    if(len == -1 && errno != EAGAIN)
+                    {
+                        perror("read");
+                        close(in_fd);
+                        return;
+                    }
+                    if(len <= 0) break;
+                    for(ptr = buf; ptr < buf + len;
+                        ptr += sizeof(struct inotify_event) + event->len)
+                    {
+                        event = (const struct inotify_event *)ptr;
+                        if(event->mask & IN_DELETE_SELF ||
+                           event->mask & IN_ATTRIB)
+                        {
+                            fprintf(stderr, "\nSerial port deviced was removed!\n");
+                            ctrl_info->sig_term = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    close(in_fd);
+    return;
 }
 
 int main(int argc, char *argv[])
@@ -541,26 +611,31 @@ int main(int argc, char *argv[])
                             comconfig.stopbit,
                             comconfig.parity) < 0)
         {
+            perror("setup serial");
+            close(fdevice);
             exit(EXIT_FAILURE);
         }
     }
     else
     {
-        MSG_ERR("Can't Open Serial Port[%s]!\n",pdevname);
+        fprintf(stderr, "Can't Open Serial Port[%s]!\n",pdevname);
+        perror("open");
         exit(EXIT_FAILURE);
     }
 
-    gs_shmid = shmget(IPC_PRIVATE, sizeof(PIPE_INFO_t), IPC_CREAT|0600);
+    gs_shmid = shmget(IPC_PRIVATE, sizeof(CTRL_INFO_t), IPC_CREAT|0600);
     if(gs_shmid < 0)
     {
-        perror("shm create error\n");
+        perror("shmget");
+        close(fdevice);
         exit(EXIT_FAILURE);
     }
 
     pid=fork();
     if(pid < 0)
     {
-        MSG_ERR("Abort...program corrupt!\n");
+        perror("fork");
+        close(fdevice);
         exit(EXIT_FAILURE);
     }
     else if(pid == 0)
@@ -568,14 +643,30 @@ int main(int argc, char *argv[])
         printf("\33[2J");
         printf("\33[41m\33[32m Serial TTY Debuger ver %s \33[0m\n", VERSION_NUMBER);
         printf("\33[41m\33[32m Ctrl-R for Menu            \33[0m\n");
-        print_msg(fdevice);
+        port_reader(fdevice);
     }
     else
     {
-        get_cmd(fdevice);
+        int ppid = fork();
+        if(ppid < 0)
+        {
+            perror("fork2");
+            close(fdevice);
+            exit(EXIT_FAILURE);
+        }
+        if(ppid == 0)
+        {
+            input_processor(fdevice);
+        }else {
+            port_connection_monitor(pdevname);
+            kill(ppid, SIGTERM);
+            wait(NULL);
+        }
+        if(fdevice >= 0) {
+            close(fdevice);
+        }
         wait(NULL);
     }
 
     exit(EXIT_SUCCESS);
-
 }
