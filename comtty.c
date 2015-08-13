@@ -1,6 +1,8 @@
 #include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -14,7 +16,6 @@
 #define CONFIG_FN "comtty.cfg"
 #define PACKSIZE 256
 #define VERSION_NUMBER "1.5"
-//#define MSG_INFO(fmt,...) printf("[INFO] "fmt, __VA_ARGS__)
 
 #define MSG_INFO(fmt,...) do {\
     printf("\n\x1b[32m[INFO] "fmt,  ##__VA_ARGS__);\
@@ -33,7 +34,7 @@ typedef struct {
     char log_path[1024];
 }PIPE_INFO_t;
 
-static int gs_fds[2];
+static int gs_shmid;
 
 char *pversion[] = {
         "\n------Software Information------\n",
@@ -208,14 +209,12 @@ void cmd_logfile(PIPE_INFO_t *pipe_info)
                 MSG_INFO("Save to log file: %s\n",pipe_info->log_path);
                 pipe_info->log_switch = 1;
                 create_log(pipe_info->log_path);
-                write(gs_fds[1], &pipe_info, sizeof(pipe_info));
                 MSG_INFO("Log started.\n");
             }
             break;
         }
         case 1:
             pipe_info->log_switch = 0;
-            write(gs_fds[1], &pipe_info, sizeof(pipe_info));
             MSG_INFO("Log stopped\n");
             break;
         default:
@@ -228,7 +227,6 @@ void cmd_shellmode(PIPE_INFO_t *pipe_info)
     char syscmd[1024];
 
     pipe_info->sig_blockoutput = 1;
-    write(gs_fds[1], pipe_info, sizeof(pipe_info));
     printf("\nEnter shell command mode:\n");
     printf("cmd@tty$ ");
     while(pipe_info->sig_blockoutput == 1)
@@ -238,7 +236,6 @@ void cmd_shellmode(PIPE_INFO_t *pipe_info)
         {
             printf("\nExit shell command mode...\n");
             pipe_info->sig_blockoutput = 0;
-            write(gs_fds[1], pipe_info, sizeof(pipe_info));
         }
         else
         {
@@ -254,7 +251,6 @@ void cmd_shellmode(PIPE_INFO_t *pipe_info)
 void cmd_exit(PIPE_INFO_t *pipe_info)
 {
     pipe_info->sig_term = 1;
-    write(gs_fds[1], pipe_info, sizeof(pipe_info));
 //    exit(0);
 }
 
@@ -262,14 +258,10 @@ int __parent_process_func__ get_cmd(int device)
 {
 #define INPUT_BUF_SIZE 4096
     char* input_buf = (char *)malloc(INPUT_BUF_SIZE);
-    PIPE_INFO_t pipe_info;
     int ret;
-
-    pipe_info.log_switch = 0;
-    pipe_info.sig_term = 0;
-    pipe_info.sig_blockoutput = 0;
-    memset(pipe_info.log_path, 0, sizeof(pipe_info.log_path));
-    write(gs_fds[1], &pipe_info, sizeof(pipe_info));
+    PIPE_INFO_t *pipe_info;
+    pipe_info = (PIPE_INFO_t *)shmat(gs_shmid, 0, 0);
+    memset(pipe_info, 0, sizeof(PIPE_INFO_t));
 
     while(1) {
         int len = read_input_seq(0, 1, input_buf, INPUT_BUF_SIZE);
@@ -283,13 +275,13 @@ int __parent_process_func__ get_cmd(int device)
                 cmd_transfile(device);
                 break;
             case KEYF2:
-                cmd_logfile(&pipe_info);
+                cmd_logfile(pipe_info);
                 break;
             case KEYF3:
                 printf("\33[2J");
                 break;
             case KEYF4:
-                cmd_shellmode(&pipe_info);
+                cmd_shellmode(pipe_info);
                 break;
             case KEYF5:
                 ret = reload_config(CONFIG_FN, config_g,
@@ -309,9 +301,8 @@ int __parent_process_func__ get_cmd(int device)
                 break;
             }
             case 0x12: //Ctrl+R
-                pipe_info.sig_blockoutput = 1;
-                write(gs_fds[1], &pipe_info, sizeof(pipe_info));
-                if (pipe_info.log_switch == 1) {
+                pipe_info->sig_blockoutput = 1;
+                if (pipe_info->log_switch == 1) {
                     pmenu[2] = "  2.Stop record log...(F2)\n";
                 } else {
                     pmenu[2] = "  2.Start to record log...(F2)\n";
@@ -320,19 +311,19 @@ int __parent_process_func__ get_cmd(int device)
                 switch (_get_input_num()) {
                     case 0:
                         printf("\n");
-                        cmd_exit(&pipe_info);
+                        cmd_exit(pipe_info);
                         goto exit;
                     case 1:
                         cmd_transfile(device);
                         break;
                     case 2:
-                        cmd_logfile(&pipe_info);
+                        cmd_logfile(pipe_info);
                         break;
                     case 3:
                         printf("\33[2J");
                         break;
                     case 4:
-                        cmd_shellmode(&pipe_info);
+                        cmd_shellmode(pipe_info);
                         break;
                     case 5:
                         ret = reload_config(CONFIG_FN, config_g,
@@ -349,8 +340,7 @@ int __parent_process_func__ get_cmd(int device)
                         MSG_ERR("Command Error!\n");
                         break;
                 }
-                pipe_info.sig_blockoutput = 0;
-                write(gs_fds[1], &pipe_info, sizeof(pipe_info));
+                pipe_info->sig_blockoutput = 0;
                 break;
             default:
                 sendbytes(device, input_buf, len);
@@ -358,6 +348,7 @@ int __parent_process_func__ get_cmd(int device)
         }
     }
     exit:
+        shmdt(pipe_info);
     return 0;
 }
 
@@ -403,7 +394,6 @@ void check_report_screensize(char c, int dev)
                             g_tty_winsz.ws_row,
                             g_tty_winsz.ws_col);
                     sendbytes(dev, sendbuf, strlen(sendbuf));
-                    printf("report winsize ok\n");
                 }
                 esc_seq_idx = 0;
                 break;
@@ -421,14 +411,10 @@ void check_report_screensize(char c, int dev)
 
 int __child_process_func__ print_msg(int device)
 {
-    PIPE_INFO_t pipe_info;
+    PIPE_INFO_t *pipe_info;
+    pipe_info = (PIPE_INFO_t *)shmat(gs_shmid, 0, 0);
+    memset(pipe_info, 0, sizeof(PIPE_INFO_t));
 
-    pipe_info.log_switch = 0;
-    pipe_info.sig_term = 0;
-    pipe_info.sig_blockoutput = 0;
-
-    int flags = fcntl(gs_fds[0], F_GETFL);
-    fcntl(gs_fds[0],F_SETFL,flags | O_NONBLOCK);
 
     get_ttywinSize(); //get win size first
     signal(SIGWINCH, ttywinSizeChanged);
@@ -438,40 +424,59 @@ int __child_process_func__ print_msg(int device)
     if(pipe(buf_fds) < 0)
     {
        buf_ena = 0;
-    }else{
-        int flags = fcntl(buf_fds[0], F_GETFL);
-        fcntl(buf_fds[0],F_SETFL,flags | O_NONBLOCK);
     }
 
-    while(1)
+    int pid=fork();
+    if(pid < 0)
     {
-        char c = 0;
-        read(gs_fds[0], &pipe_info, sizeof(pipe_info));
-        if(buf_ena && pipe_info.sig_blockoutput == 0)
-        {
-            while(read(buf_fds[0], &c, 1) > 0)
-            {
-                write(STDOUT_FILENO, &c, 1);
-            }
-        }
-        if(pipe_info.sig_term == 1) break;
-        if(readbytes(device, &c, 1) > 0)
-        {
-            if(pipe_info.sig_blockoutput == 0)
-            {
-                write(STDOUT_FILENO, &c, 1);
-            }else{
-                //write to pipe
-                write(buf_fds[1], &c, 1);
-            }
-            check_report_screensize(c, device);
-
-            if(pipe_info.log_switch == 1)
-            {
-                put_log(pipe_info.log_path,&c, 1);
-            }
-        }
+        MSG_ERR("Abort...program corrupt!\n");
+        exit(EXIT_FAILURE);
     }
+    if(pid == 0)
+    {
+        if(buf_ena) {
+            int flags = fcntl(buf_fds[0], F_GETFL);
+            fcntl(buf_fds[0], F_SETFL, flags | O_NONBLOCK);
+            close(buf_fds[1]); //close write
+        }
+        while(!pipe_info->sig_term) {
+            char c = 0;
+            if (buf_ena && pipe_info->sig_blockoutput == 0) {
+                while (read(buf_fds[0], &c, 1) > 0) {
+                    write(STDOUT_FILENO, &c, 1);
+                }
+            }
+            usleep(100);
+        }
+        close(buf_fds[0]);
+    }else {
+        while (!pipe_info->sig_term) {
+            char c = 0;
+            if(buf_ena) {
+                close(buf_fds[0]); //close read
+            }
+            if (readbytes(device, &c, 1) > 0) {
+                if (pipe_info->sig_blockoutput == 0) {
+                    write(STDOUT_FILENO, &c, 1);
+                } else {
+                    if(buf_ena) {
+                        //write to pipe
+                        write(buf_fds[1], &c, 1);
+                    }
+                }
+                check_report_screensize(c, device);
+
+                if (pipe_info->log_switch == 1) {
+                    put_log(pipe_info->log_path, &c, 1);
+                }
+            }
+            usleep(10);
+        }
+        close(buf_fds[1]);
+        wait(NULL);
+    }
+
+    shmdt(pipe_info);
 
     return 0;
 
@@ -545,9 +550,10 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    if(pipe(gs_fds) < 0)
+    gs_shmid = shmget(IPC_PRIVATE, sizeof(PIPE_INFO_t), IPC_CREAT|0600);
+    if(gs_shmid < 0)
     {
-        MSG_ERR("pipe open error\n");
+        perror("shm create error\n");
         exit(EXIT_FAILURE);
     }
 
@@ -559,19 +565,15 @@ int main(int argc, char *argv[])
     }
     else if(pid == 0)
     {
-        close(gs_fds[1]); //close write pipe
         printf("\33[2J");
         printf("\33[41m\33[32m Serial TTY Debuger ver %s \33[0m\n", VERSION_NUMBER);
         printf("\33[41m\33[32m Ctrl-R for Menu            \33[0m\n");
         print_msg(fdevice);
-        close(gs_fds[0]);
     }
     else
     {
-        close(gs_fds[0]); //close read pipe
         get_cmd(fdevice);
         wait(NULL);
-        close(gs_fds[1]);
     }
 
     exit(EXIT_SUCCESS);
