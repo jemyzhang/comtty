@@ -18,7 +18,7 @@
 
 #define CONFIG_FN "comtty.cfg"
 #define PACKSIZE 256
-#define VERSION_NUMBER "1.6"
+#define VERSION_NUMBER "1.6.1"
 
 #define MSG_INFO(fmt,...) do {\
     printf("\n\x1b[32m"fmt,  ##__VA_ARGS__);\
@@ -43,7 +43,7 @@ char *pversion[] = {
         "\n------Software Information------\n",
         "   Version: "VERSION_NUMBER"\n",
         "   Create date: 2007.02.16\n",
-        "   Last update: 2015.08.13\n",
+        "   Last update: 2015.08.20\n",
         "   Author: JEMYZHANG\n",
         "-------------------------------\n\n",
         NULL,

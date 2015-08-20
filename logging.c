@@ -7,7 +7,7 @@ int create_log(char *logpath)
         printf("Resource %s busy\n",logpath);
         return -1;
     }
-    return 0;        
+    return 0;
 }
 
 int put_log(char *logpath, char *log, int size)
@@ -20,6 +20,6 @@ int put_log(char *logpath, char *log, int size)
     {
         fwrite(log,size,1,flog);
         fclose(flog);
-    } 
-    return 0;     
+    }
+    return 0;
 }

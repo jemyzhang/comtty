@@ -5,8 +5,6 @@ char dlgofn[1024];
 char dlgsfn[1024];
 
 #if defined(linux)
-#include <stdio.h>
-#include <stdlib.h>
 
 char *fopenDlg(char *title,char *filter, char *initaldir)
 {
@@ -26,6 +24,12 @@ char *fopenDlg(char *title,char *filter, char *initaldir)
 
     }
     pclose(fp);
+
+    char *pos;
+    if((pos = strchr(dlgsfn, '\n')) != NULL)
+    {
+        *pos = '\0';
+    }
 
     return strlen(dlgofn) > 0 ? dlgofn : NULL;
 }
@@ -48,6 +52,12 @@ char *fsaveDlg(char *title,char *filter, char *initaldir)
 
     }
     pclose(fp);
+
+    char *pos;
+    if((pos = strchr(dlgsfn, '\n')) != NULL)
+    {
+        *pos = '\0';
+    }
 
     return strlen(dlgsfn) > 0 ? dlgsfn : NULL;
 }
