@@ -1,7 +1,7 @@
 ARCH=$(shell uname -s)
 TARGET = comtty
 SRC = comtty.c
-OBJS = _get_key.o com_op.o logging.o filedlg.o config.o commonFunc.o
+OBJS = _get_key.o com_op.o logging.o filedlg.o config.o common.o
 LIBS = libcomtty.a
 ifeq ($(ARCH), cygwin)
 SYS_LIBS = /lib/w32api/libcomdlg32.a

@@ -8,8 +8,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <signal.h>
 #include <string.h>
+#include <stdlib.h>
 #include "_get_key.h"
 #include "com_op.h"
 #include "logging.h"
@@ -18,7 +18,7 @@
 
 #define CONFIG_FN "comtty.cfg"
 #define PACKSIZE 256
-#define VERSION_NUMBER "1.6.1"
+#define VERSION_NUMBER "1.6.2"
 
 #define MSG_INFO(fmt,...) do {\
     printf("\n\x1b[32m"fmt,  ##__VA_ARGS__);\
@@ -30,20 +30,13 @@
     printf("\x1b[0m");\
 }while(0)
 
-typedef struct {
-    char sig_term;
-    char sig_blockoutput;
-    char log_switch;
-    char log_path[1024];
-} CTRL_INFO_t;
-
 static int gs_shmid;
 
 char *pversion[] = {
         "\n------Software Information------\n",
         "   Version: "VERSION_NUMBER"\n",
         "   Create date: 2007.02.16\n",
-        "   Last update: 2015.08.20\n",
+        "   Last update: 2015.08.25\n",
         "   Author: JEMYZHANG\n",
         "-------------------------------\n\n",
         NULL,
@@ -446,6 +439,24 @@ int __child_process_func__ port_reader(int device)
         }
         close(buf_fds[0]);
     }else {
+        int log_fds[2];
+        if(pipe(log_fds) < 0)
+        {
+            perror("log pipe()");
+            exit(EXIT_FAILURE);
+        }
+        int log_pid = fork();
+        if(log_pid < 0)
+        {
+            perror("log fork()");
+            exit(EXIT_FAILURE);
+        }
+        if(log_pid == 0)
+        {
+            log_to_file(ctrl_info, log_fds);
+            return 0;
+        }
+        close(log_fds[0]); //close log read
         while (!ctrl_info->sig_term) {
             char c = 0;
             if(buf_ena) {
@@ -463,11 +474,13 @@ int __child_process_func__ port_reader(int device)
                 check_report_screensize(c, device);
 
                 if (ctrl_info->log_switch == 1) {
-                    put_log(ctrl_info->log_path, &c, 1);
+                    write(log_fds[1], &c, 1);
+//                    put_log(ctrl_info->log_path, &c, 1);
                 }
             }
             usleep(10);
         }
+        close(log_fds[1]);
         close(buf_fds[1]);
         wait(NULL);
     }

@@ -1,5 +1,5 @@
-#include "commonFunc.h"
 #include <string.h>
+#include "common.h"
 
 long get_file_size(FILE *fp) {
     long size;

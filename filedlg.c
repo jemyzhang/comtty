@@ -1,5 +1,6 @@
 #include <string.h>
-#include "commonFunc.h"
+#include <stdio.h>
+#include "common.h"
 
 char dlgofn[1024];
 char dlgsfn[1024];

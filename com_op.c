@@ -1,4 +1,10 @@
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <termios.h>
+#include <time.h>
+#include <unistd.h>
+#include "common.h"
 #include "com_op.h"
 
 int speed_arr[] = { B115200, B57600, B38400, B19200, B9600, B4800, B2400, B1200, B300,};

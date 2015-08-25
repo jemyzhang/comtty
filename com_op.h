@@ -1,14 +1,6 @@
 #ifndef _COM_OP_H
 #define _COM_OP_H
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <termios.h>
-#include <fcntl.h>
-#include <time.h>
-#include <unistd.h>
-#include "commonFunc.h"
-
 #define FALSE  0
 #define TRUE  1
 

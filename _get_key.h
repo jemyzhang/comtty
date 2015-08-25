@@ -1,15 +1,6 @@
 #ifndef __GET_KEY_H
 #define __GET_KEY_H
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <ctype.h>
-#include <unistd.h>
-#include <termios.h>
-#include <sys/ioctl.h>
-#include <sys/time.h>
-#include <sys/types.h>
-
 enum {
     KEYESC = 0x1b,
     BKSPC = 8,
