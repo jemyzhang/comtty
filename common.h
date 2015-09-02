@@ -6,6 +6,7 @@
 typedef struct {
     char sig_term;
     char sig_blockoutput;
+    char sig_timestamp;
     char log_switch;
     char log_path[1024];
 } CTRL_INFO_t;

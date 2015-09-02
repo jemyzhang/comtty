@@ -10,15 +10,17 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 #include "_get_key.h"
 #include "com_op.h"
 #include "logging.h"
 #include "config.h"
 #include "filedlg.h"
+#include "common.h"
 
 #define CONFIG_FN "comtty.cfg"
 #define PACKSIZE 256
-#define VERSION_NUMBER "1.6.2"
+#define VERSION_NUMBER "1.6.3"
 
 #define MSG_INFO(fmt,...) do {\
     printf("\n\x1b[32m"fmt,  ##__VA_ARGS__);\
@@ -36,7 +38,7 @@ char *pversion[] = {
         "\n------Software Information------\n",
         "   Version: "VERSION_NUMBER"\n",
         "   Create date: 2007.02.16\n",
-        "   Last update: 2015.08.25\n",
+        "   Last update: 2015.09.01\n",
         "   Author: JEMYZHANG\n",
         "-------------------------------\n\n",
         NULL,
@@ -44,12 +46,13 @@ char *pversion[] = {
 
 char *pmenu[] = {
         "\n---------COMTTY v."VERSION_NUMBER"---------\n",
-        "  1.Send file...(F1)\n",
-        "  2.Start to record log...(F2)\n",
-        "  3.Clear screen...(F3)\n",
-        "  4.Run shell command...(F4)\n",
-        "  5.Refresh Settings...(F5)\n",
-        "  6.About me...\n",
+        "  1.Send file...\n",
+        "  2.Start to record log...\n",
+        "  3.Clear screen...\n",
+        "  4.Run shell command...\n",
+        "  5.Refresh Settings...\n",
+        "  6.Enable Timestamps...\n",
+        "  7.About me...\n",
         "  0.Exit...\n",
         "------------------------------\n",
         "Please select a command: ",
@@ -67,12 +70,16 @@ const CONFIG_t default_config[] = {
         { "StopBit", "1" },
         { "Parity", "N" },
         { "#", "# Configuration of key shortcut" },
-        { "#", "# F1 - F5 reserved for program function" },
         { "#", "# \"\\n\" -- 0x0d" },
         { "#", "# \"#!-\" sleep for 10ms" },
         { "#", "# \"#!|\" sleep for 1s" },
         { "#", "# \"#!~\" sleep for 5s" },
         { "#", "# \"#!!\"sleep for 10s" },
+        { "F1", "\\n" },
+        { "F2", "\\n" },
+        { "F3", "\\n" },
+        { "F4", "\\n" },
+        { "F5", "\\n" },
         { "F6", "\\n" },
         { "F7", "\\n" },
         { "F8", "\\n" },
@@ -262,22 +269,10 @@ int __parent_process_func__ input_processor(int device)
         if(len > 1) fake_key = gen_fake_key(input_buf);
         switch(fake_key) {
             case KEYF1:
-                cmd_transfile(device);
-                break;
             case KEYF2:
-                cmd_logfile(ctrl_info);
-                break;
             case KEYF3:
-                printf("\33[2J");
-                break;
             case KEYF4:
-                cmd_shellmode(ctrl_info);
-                break;
             case KEYF5:
-                ret = reload_config(CONFIG_FN, config_g,
-                                    sizeof(config_g) / sizeof(CONFIG_t));
-                MSG_INFO("%s reload configurations...\n", (ret != -1 ? "Successfully" : "Failed"));
-                break;
             case KEYF6:
             case KEYF7:
             case KEYF8:
@@ -293,9 +288,14 @@ int __parent_process_func__ input_processor(int device)
             case 0x12: //Ctrl+R
                 ctrl_info->sig_blockoutput = 1;
                 if (ctrl_info->log_switch == 1) {
-                    pmenu[2] = "  2.Stop record log...(F2)\n";
+                    pmenu[2] = "  2.Stop record log...\n";
                 } else {
-                    pmenu[2] = "  2.Start to record log...(F2)\n";
+                    pmenu[2] = "  2.Start to record log...\n";
+                }
+                if (ctrl_info->sig_timestamp == 1) {
+                    pmenu[6] = "  6.Disable Timestamps...\n";
+                } else {
+                    pmenu[6] = "  6.Enable Timestamps...\n";
                 }
                 disp_dbg_menu();
                 switch (_get_input_num()) {
@@ -321,6 +321,16 @@ int __parent_process_func__ input_processor(int device)
                         MSG_INFO("%s reload configurations...\n", (ret != -1 ? "Successfully" : "Failed"));
                         break;
                     case 6:
+                        if(ctrl_info->sig_timestamp)
+                        {
+                            ctrl_info->sig_timestamp = 0;
+                            MSG_INFO("Disable Timestamps\n");
+                        }else {
+                            ctrl_info->sig_timestamp = 1;
+                            MSG_INFO("Enable Timestamps\n");
+                        }
+                        break;
+                    case 7:
                         disp_version();
                         break;
                     case -1:
@@ -463,18 +473,32 @@ int __child_process_func__ port_reader(int device)
                 close(buf_fds[0]); //close read
             }
             if (readbytes(device, &c, 1) > 0) {
+                char outbuf[64];
+                int buflen = 1;
+                outbuf[0] = c;
+                if(c == '\n' && ctrl_info->sig_timestamp)
+                {
+                    time_t timep;
+                    struct tm *p;
+                    time(&timep);
+                    p = localtime(&timep);
+                    sprintf(&outbuf[1], "%04d.%02d.%02d %02d:%02d:%02d    ",
+                            (1900 + p->tm_year), p->tm_mon, p->tm_mday,
+                    p->tm_hour, p->tm_min, p->tm_sec);
+                    buflen = strlen(outbuf);
+                }
                 if (ctrl_info->sig_blockoutput == 0) {
-                    write(STDOUT_FILENO, &c, 1);
+                    write(STDOUT_FILENO, outbuf, buflen);
                 } else {
                     if(buf_ena) {
                         //write to pipe
-                        write(buf_fds[1], &c, 1);
+                        write(buf_fds[1], outbuf, buflen);
                     }
                 }
                 check_report_screensize(c, device);
 
                 if (ctrl_info->log_switch == 1) {
-                    write(log_fds[1], &c, 1);
+                    write(log_fds[1], outbuf, buflen);
 //                    put_log(ctrl_info->log_path, &c, 1);
                 }
             }
