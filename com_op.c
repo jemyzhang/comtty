@@ -12,9 +12,9 @@ int name_arr[] = { 115200, 57600, 38400,  19200,  9600,  4800,  2400,  1200,  30
 
 int sendchar(int device, char cmd)
 {
-     int ret = 0;
-     ret = write(device,&cmd,sizeof(cmd));
-     return ret;
+    int ret = 0;
+    ret = write(device,&cmd,sizeof(cmd));
+    return ret;
 }
 
 int sendbytes(int device, char *pbytes, int size)
@@ -55,18 +55,22 @@ int sendcmds(int device, char *cmds)
                             char c2 = cmds[i];
                             switch(c2)
                             {
-                                 case '-':
-                                     usleep(10000);
-                                     break;
-                                 case '|':
-                                     sleep(1);
-                                     break;
-                                 case '~':
-                                     sleep(5);
-                                     break;
-                                 case '!':
-                                     sleep(10);
-                                     break;
+                                case '-':
+                                    MSG_INFO("waiting for 10ms");
+                                    usleep(10000);
+                                    break;
+                                case '|':
+                                    MSG_INFO("waiting for 1s");
+                                    sleep(1);
+                                    break;
+                                case '~':
+                                    MSG_INFO("waiting for 5s");
+                                    sleep(5);
+                                    break;
+                                case '!':
+                                    MSG_INFO("waiting for 10s\n");
+                                    sleep(10);
+                                    break;
                                 default:
                                     sendchar(device, c);
                                     sendchar(device, c1);
@@ -100,8 +104,8 @@ int sendcmds(int device, char *cmds)
                         default:
                             ret = sendchar(device, *(cmds + i));
                             break;
-                     }
-                 }
+                    }
+                }
                 break;
             default:
                 ret = sendchar(device, c);
@@ -113,7 +117,7 @@ int sendcmds(int device, char *cmds)
                 break;
         }
     }
-    return ret;  
+    return ret;
 }
 
 int sendfile(char *file,int device,int packsize)
@@ -121,14 +125,14 @@ int sendfile(char *file,int device,int packsize)
     FILE *fp;
     unsigned int filesize,sentcnt = 0;
     int sendpersent = 0;
-    
+
     char sendbuf[packsize];
     int getsize = packsize;
     int sentsize = packsize;
     time_t start_tm = 0, end_tm = 0;
-    
-    _init_array(sendbuf,sizeof(sendbuf));
-    
+
+    memset(sendbuf,0,sizeof(sendbuf));
+
     if((fp = fopen(file,"rb")) == NULL)
     {
         return -1;
@@ -138,9 +142,9 @@ int sendfile(char *file,int device,int packsize)
     if(filesize < packsize) {
         sentsize = filesize;
         getsize = sentsize + 1;
-        }
-    
-    printf("\nSending...\33[s");
+    }
+
+    MSG_INFO("\nSending...\33[s");
     time(&start_tm);
     while(!feof(fp))
     {
@@ -157,14 +161,14 @@ int sendfile(char *file,int device,int packsize)
             sentsize = packsize;
             getsize = sentsize;
         }
-        _init_array(sendbuf,sizeof(sendbuf));
-        printf("\33[u\33[k%d bytes [%d%%]",sentcnt,sendpersent);
+        memset(sendbuf,0,sizeof(sendbuf));
+        MSG_INFO("\33[u\33[k%d bytes [%d%%]",sentcnt,sendpersent);
         fflush(stdout);
-     }
-     time(&end_tm);
-     printf("[SPD:%.0fs]\n",
-     difftime(end_tm,start_tm));
-     return 0;
+    }
+    time(&end_tm);
+    MSG_INFO("[SPD:%.0fs]\n",
+           difftime(end_tm,start_tm));
+    return 0;
 }
 
 /**
@@ -175,12 +179,12 @@ int sendfile(char *file,int device,int packsize)
 *@param  parity  类型  int  效验类型 取值为N,E,O,,S
 */
 int setup_serialport(int fd, int speed, int databits,int stopbits,int parity)
-{ 
+{
     int i;
     struct termios options;
     if(tcgetattr(fd, &options) != 0)
     {
-        printf("failed to get tc attr\n");
+        MSG_ERR("failed to get tc attr\n");
         return -1;
     }
 
@@ -188,9 +192,9 @@ int setup_serialport(int fd, int speed, int databits,int stopbits,int parity)
     cfmakeraw(&options);
 
     for ( i= 0;  i < sizeof(speed_arr) / sizeof(int);  i++)
-    { 
+    {
         if  (speed == name_arr[i])
-        { 
+        {
             cfsetispeed(&options, speed_arr[i]);
             cfsetospeed(&options, speed_arr[i]);
             break;
@@ -198,80 +202,80 @@ int setup_serialport(int fd, int speed, int databits,int stopbits,int parity)
     }
     if(i >= sizeof(speed_arr)/sizeof(speed_arr[0]))
     {
-        printf("Do not support Baudrate %d\n",speed);
+        MSG_ERR("Do not support Baudrate %d\n",speed);
         return -1;
     }
 
-    options.c_cflag &= ~CSIZE; 
+    options.c_cflag &= ~CSIZE;
     switch (databits) /*设置数据位数*/
-    {   
-        case 7:     
-            options.c_cflag |= CS7; 
+    {
+        case 7:
+            options.c_cflag |= CS7;
             break;
-        case 8:     
+        case 8:
             options.c_cflag |= CS8;
-            break;   
-        default:    
-            printf("Unsupported data bits\n");
+            break;
+        default:
+            MSG_ERR("Unsupported data bits\n");
             return -1;
     }
-    switch (parity) 
-    {   
+    switch (parity)
+    {
         case 'n':
-        case 'N':    
+        case 'N':
             options.c_cflag &= ~PARENB;   /* Clear parity enable */
-            options.c_iflag &= ~INPCK;     /* Enable parity checking */ 
-            break;  
-        case 'o':   
-        case 'O':     
-            options.c_cflag |= (PARODD | PARENB); /* 设置为奇效验*/  
-            options.c_iflag |= INPCK;             /* Disnable parity checking */ 
-            break;  
-        case 'e':  
-        case 'E':   
-            options.c_cflag |= PARENB;     /* Enable parity */    
-            options.c_cflag &= ~PARODD;   /* 转换为偶效验*/     
+            options.c_iflag &= ~INPCK;     /* Enable parity checking */
+            break;
+        case 'o':
+        case 'O':
+            options.c_cflag |= (PARODD | PARENB); /* 设置为奇效验*/
+            options.c_iflag |= INPCK;             /* Disnable parity checking */
+            break;
+        case 'e':
+        case 'E':
+            options.c_cflag |= PARENB;     /* Enable parity */
+            options.c_cflag &= ~PARODD;   /* 转换为偶效验*/
             options.c_iflag |= INPCK;       /* Disnable parity checking */
             break;
-        case 'S': 
-        case 's':  /*as no parity*/   
+        case 'S':
+        case 's':  /*as no parity*/
             options.c_cflag &= ~PARENB;
             options.c_cflag &= ~CSTOPB;
-            break;  
-        default:   
-            printf("Unsupported parity\n");    
-            return -1;
-    }  
-    /* Set input parity option */ 
-    if (parity != 'n')   
-    {
-        options.c_iflag |= INPCK; 
-    }
-    /* 设置停止位*/  
-    switch (stopbits)
-    {   
-        case 1:    
-            options.c_cflag &= ~CSTOPB;  
-            break;  
-        case 2:    
-            options.c_cflag |= CSTOPB;  
             break;
-        default:    
-            printf("Unsupported stop bits\n");  
+        default:
+            MSG_ERR("Unsupported parity\n");
             return -1;
-    } 
+    }
+    /* Set input parity option */
+    if (parity != 'n')
+    {
+        options.c_iflag |= INPCK;
+    }
+    /* 设置停止位*/
+    switch (stopbits)
+    {
+        case 1:
+            options.c_cflag &= ~CSTOPB;
+            break;
+        case 2:
+            options.c_cflag |= CSTOPB;
+            break;
+        default:
+            MSG_ERR("Unsupported stop bits\n");
+            return -1;
+    }
 
     tcflush(fd,TCIOFLUSH);
     tcflush(fd,TCIFLUSH);
 
-    options.c_cc[VTIME] = 150; /* 设置超时15 seconds*/   
+    options.c_cc[VTIME] = 150; /* 设置超时15 seconds*/
     options.c_cc[VMIN] = 0; /* Update the options and do it NOW */
 
     if (tcsetattr(fd,TCSANOW,&options) != 0)
-    { 
-        printf("failed setup serial port\n");   
+    {
+        MSG_ERR("failed setup serial port\n");
         return -1;
-    } 
+    }
 
     return 0;
 }

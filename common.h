@@ -3,6 +3,9 @@
 
 #include <stdio.h>
 
+void MSG_INFO(char *fmt,...);
+void MSG_ERR(char *fmt,...);
+
 typedef struct {
     char sig_term;
     char sig_blockoutput;
@@ -12,7 +15,5 @@ typedef struct {
 } CTRL_INFO_t;
 
 long get_file_size(FILE *fp);
-void _init_array(char *buf,int size);
-char *_strim(char *string);
 
 #endif /*_COMMONFUNC_H*/

@@ -20,17 +20,7 @@
 
 #define CONFIG_FN "comtty.cfg"
 #define PACKSIZE 256
-#define VERSION_NUMBER "1.6.4"
-
-#define MSG_INFO(fmt,...) do {\
-    printf("\n\x1b[32m"fmt,  ##__VA_ARGS__);\
-    printf("\x1b[0m");\
-}while(0)
-
-#define MSG_ERR(fmt,...) do {\
-    printf("\n\x1b[31m"fmt, ##__VA_ARGS__);\
-    printf("\x1b[0m");\
-}while(0)
+#define VERSION_NUMBER "1.6.5"
 
 static int gs_shmid;
 
@@ -59,91 +49,16 @@ char *pmenu[] = {
         NULL,
 };
 
+#define MAX_CONFIG_SZ 64
+static CONFIG_t config_g[MAX_CONFIG_SZ];
+
 #define __parent_process_func__
 #define __child_process_func__
-
-const CONFIG_t default_config[] = {
-        { "#", "# Config file for comtty[Ver 1.1]" },
-        { "#", "# Configuration of com-port" },
-        { "PortName", "/dev/ttyS0" },
-        { "Baudrate", "115200" },
-        { "DataBits", "8" },
-        { "StopBit", "1" },
-        { "Parity", "N" },
-        { "#", "# Configuration of key shortcut" },
-        { "#", "# \"\\n\" -- 0x0d" },
-        { "#", "# \"#!-\" sleep for 10ms" },
-        { "#", "# \"#!|\" sleep for 1s" },
-        { "#", "# \"#!~\" sleep for 5s" },
-        { "#", "# \"#!!\"sleep for 10s" },
-        { "F1", "\\n" },
-        { "F2", "\\n" },
-        { "F3", "\\n" },
-        { "F4", "\\n" },
-        { "F5", "\\n" },
-        { "F6", "\\n" },
-        { "F7", "\\n" },
-        { "F8", "\\n" },
-        { "F9", "\\n" },
-        { "F10", "\\n" },
-        { "F11", "\\n" },
-        { "F12", "\\n" },
-#if 0
-    { "UP", "2-4-\\n" },
-    { "DOWN", "2-5-\\n" },
-    { "LEFT", "2-7-\\n" },
-    { "RIGHT", "2-6-\\n" },
-#endif
-        { "#", "# end of configure file" },
-        {NULL,NULL},
-};
-
-CONFIG_t config_g[100];
-
-void _init_config_var(void)
-{
-    int i;
-    for(i = 0; i< sizeof(config_g)/sizeof(CONFIG_t); i++)
-    {
-        config_g[i].key = NULL;
-        config_g[i].value = NULL;
-    }
-}
-
-int _create_default_config(void)
-{
-    int ret = 0,cnt = 0;
-    while(default_config[cnt].key != NULL)
-    {
-        config_g[cnt].key = default_config[cnt].key;
-        config_g[cnt].value = default_config[cnt].value;
-        cnt ++;
-    }
-    ret = save_config(CONFIG_FN,config_g,sizeof(config_g)/sizeof(CONFIG_t));
-    return ret;
-}
-
-char *_get_configvalue(char *key)
-{
-    int i = 0;
-    int pos = -1;
-    while( config_g[i].key != NULL)
-    {
-        if(strcmp(config_g[i].key,key) == 0)
-        {
-            pos = i;
-            break;
-        }
-        i ++;
-    }
-    if(pos == -1 || strcmp(config_g[pos].value," ") == 0) return NULL;
-    return config_g[pos].value;
-}
 
 void send_shortcuts(int device,char *key)
 {
     char *shortcuts;
-    shortcuts = _get_configvalue(key);
+    shortcuts = config_getvalue(key, config_g);
     if(shortcuts != NULL )
     {
         sendcmds(device,shortcuts);
@@ -235,7 +150,7 @@ void cmd_shellmode(CTRL_INFO_t *ctrl_info)
     printf("cmd@tty$ ");
     while(ctrl_info->sig_blockoutput == 1)
     {
-        _init_array(syscmd,sizeof(syscmd));
+        memset(syscmd,0,sizeof(syscmd));
         if(_get_input_string(syscmd) == -1 || strcmp(syscmd,"exit") == 0)
         {
             MSG_INFO("\nExit shell command mode...\n");
@@ -318,7 +233,7 @@ int __parent_process_func__ input_processor(int device)
                         break;
                     case 5:
                         ret = reload_config(CONFIG_FN, config_g,
-                                            sizeof(config_g) / sizeof(CONFIG_t));
+                                            MAX_CONFIG_SZ);
                         MSG_INFO("%s reload configurations...\n", (ret != -1 ? "Successfully" : "Failed"));
                         break;
                     case 6:
@@ -597,10 +512,10 @@ int main(int argc, char *argv[])
     char *val;
     COM_CONFIG_t config;
 
-    _init_config_var();
-    if(load_config(CONFIG_FN, config_g,sizeof(config_g)/sizeof(CONFIG_t)) == -1)
+    memset(config_g, 0, sizeof(config_g));
+    if(load_config(CONFIG_FN, config_g, MAX_CONFIG_SZ) == -1)
     {
-        _create_default_config();
+        config_create_default(CONFIG_FN, config_g, MAX_CONFIG_SZ);
     }
 
     config.baudrate = 115200;
@@ -609,27 +524,27 @@ int main(int argc, char *argv[])
     config.parity = 'N';
     strcpy(config.portname, "/dev/ttyS0");
 
-    if((val =_get_configvalue("PortName")) != NULL)
+    if((val =config_getvalue("PortName", config_g)) != NULL)
     {
         strcpy(config.portname, val);
     }
 
-    if((val =_get_configvalue("Baudrate")) != NULL)
+    if((val =config_getvalue("Baudrate", config_g)) != NULL)
     {
         config.baudrate = atoi(val);
     }
 
-    if((val = _get_configvalue("DataBits")) != NULL)
+    if((val = config_getvalue("DataBits", config_g)) != NULL)
     {
         config.databits = atoi(val);
     }
 
-    if((val = _get_configvalue("StopBit")) != NULL)
+    if((val = config_getvalue("StopBit", config_g)) != NULL)
     {
         config.stopbit = atoi(val);
     }
 
-    if((val = _get_configvalue("Parity")) != NULL)
+    if((val = config_getvalue("Parity", config_g)) != NULL)
     {
         config.parity = (int)(*val);
     }

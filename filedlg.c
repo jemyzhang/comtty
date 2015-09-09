@@ -10,7 +10,7 @@ char dlgsfn[1024];
 char *fopenDlg(char *title,char *filter, char *initaldir)
 {
     char cmdstr[256];
-    _init_array(dlgofn, sizeof(dlgofn));
+    memset(dlgofn, 0, sizeof(dlgofn));
     sprintf(cmdstr,
             "/usr/bin/zenity --title '%s' \\" \
             "--file-selection \\" \
@@ -38,7 +38,7 @@ char *fopenDlg(char *title,char *filter, char *initaldir)
 char *fsaveDlg(char *title,char *filter, char *initaldir)
 {
     char cmdstr[256];
-    _init_array(dlgsfn, sizeof(dlgsfn));
+    memset(dlgsfn, 0, sizeof(dlgsfn));
     sprintf(cmdstr,
             "/usr/bin/zenity --title '%s' \\" \
             "--file-selection --save --confirm-overwrite \\" \
