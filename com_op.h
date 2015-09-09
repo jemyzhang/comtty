@@ -5,6 +5,7 @@
 #define TRUE  1
 
 typedef struct {
+    char portname[256];
     int baudrate;
     int databits;
     int stopbit;

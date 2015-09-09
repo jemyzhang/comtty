@@ -20,7 +20,7 @@
 
 #define CONFIG_FN "comtty.cfg"
 #define PACKSIZE 256
-#define VERSION_NUMBER "1.6.3"
+#define VERSION_NUMBER "1.6.4"
 
 #define MSG_INFO(fmt,...) do {\
     printf("\n\x1b[32m"fmt,  ##__VA_ARGS__);\
@@ -38,7 +38,7 @@ char *pversion[] = {
         "\n------Software Information------\n",
         "   Version: "VERSION_NUMBER"\n",
         "   Create date: 2007.02.16\n",
-        "   Last update: 2015.09.01\n",
+        "   Last update: 2015.09.09\n",
         "   Author: JEMYZHANG\n",
         "-------------------------------\n\n",
         NULL,
@@ -65,6 +65,7 @@ char *pmenu[] = {
 const CONFIG_t default_config[] = {
         { "#", "# Config file for comtty[Ver 1.1]" },
         { "#", "# Configuration of com-port" },
+        { "PortName", "/dev/ttyS0" },
         { "Baudrate", "115200" },
         { "DataBits", "8" },
         { "StopBit", "1" },
@@ -482,7 +483,7 @@ int __child_process_func__ port_reader(int device)
                     struct tm *p;
                     time(&timep);
                     p = localtime(&timep);
-                    sprintf(&outbuf[1], "%04d.%02d.%02d %02d:%02d:%02d    ",
+                    sprintf(&outbuf[1], "\x1b[37;44m[%04d-%02d-%02d %02d:%02d:%02d]\x1b[0m ",
                             (1900 + p->tm_year), p->tm_mon, p->tm_mday,
                     p->tm_hour, p->tm_min, p->tm_sec);
                     buflen = strlen(outbuf);
@@ -593,20 +594,8 @@ int main(int argc, char *argv[])
 {
     pid_t pid;
     int fdevice;
-    char *config;
-    COM_CONFIG_t comconfig;
-
-    char *pdevname;    ///dev/com
-
-    if(argc < 2)
-    {
-        printf("Usage:\n    %s <device name>\t\tDevice name, such as com1.\n",argv[0]);
-        exit(EXIT_SUCCESS);
-    }
-
-    pdevname = (char *)malloc(strlen(argv[1]) + 6);
-    strcpy(pdevname,"/dev/");
-    strcat(pdevname,argv[1]);
+    char *val;
+    COM_CONFIG_t config;
 
     _init_config_var();
     if(load_config(CONFIG_FN, config_g,sizeof(config_g)/sizeof(CONFIG_t)) == -1)
@@ -614,39 +603,45 @@ int main(int argc, char *argv[])
         _create_default_config();
     }
 
-    comconfig.baudrate = 115200;
-    comconfig.databits = 8;
-    comconfig.stopbit = 1;
-    comconfig.parity = 'N';
+    config.baudrate = 115200;
+    config.databits = 8;
+    config.stopbit = 1;
+    config.parity = 'N';
+    strcpy(config.portname, "/dev/ttyS0");
 
-    if((config =_get_configvalue("Baudrate")) != NULL)
+    if((val =_get_configvalue("PortName")) != NULL)
     {
-        comconfig.baudrate = atoi(config);
+        strcpy(config.portname, val);
     }
 
-    if((config = _get_configvalue("DataBits")) != NULL)
+    if((val =_get_configvalue("Baudrate")) != NULL)
     {
-        comconfig.databits = atoi(config);
+        config.baudrate = atoi(val);
     }
 
-    if((config = _get_configvalue("StopBit")) != NULL)
+    if((val = _get_configvalue("DataBits")) != NULL)
     {
-        comconfig.stopbit = atoi(config);
+        config.databits = atoi(val);
     }
 
-    if((config = _get_configvalue("Parity")) != NULL)
+    if((val = _get_configvalue("StopBit")) != NULL)
     {
-        comconfig.parity = (int)(*config);
+        config.stopbit = atoi(val);
     }
 
-    fdevice = open(pdevname, O_RDWR | O_NONBLOCK);
+    if((val = _get_configvalue("Parity")) != NULL)
+    {
+        config.parity = (int)(*val);
+    }
+
+    fdevice = open(config.portname, O_RDWR | O_NONBLOCK);
     if (fdevice>0)
     {
         if(setup_serialport(fdevice,
-                            comconfig.baudrate,
-                            comconfig.databits,
-                            comconfig.stopbit,
-                            comconfig.parity) < 0)
+                            config.baudrate,
+                            config.databits,
+                            config.stopbit,
+                            config.parity) < 0)
         {
             perror("setup serial");
             close(fdevice);
@@ -655,7 +650,7 @@ int main(int argc, char *argv[])
     }
     else
     {
-        fprintf(stderr, "Can't Open Serial Port[%s]!\n",pdevname);
+        fprintf(stderr, "Can't Open Serial Port[%s]!\n", config.portname);
         perror("open");
         exit(EXIT_FAILURE);
     }
@@ -695,7 +690,7 @@ int main(int argc, char *argv[])
         {
             input_processor(fdevice);
         }else {
-            port_connection_monitor(pdevname);
+            port_connection_monitor(config.portname);
             kill(ppid, SIGTERM);
             wait(NULL);
         }
