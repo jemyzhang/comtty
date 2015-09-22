@@ -8,7 +8,17 @@
 
 ## 运行
 ```
-./comtty ttyUSB0
+-c,--config             configure file path
+-g,--generate           generate default configure file,
+                        if the configure file is not exists
+-p,--port               port device
+-b,--bandrate           baundrate
+-d,--databits           databits
+-s,--stopbit            stopbit
+-r,--parity             parity
+-l,--log                start log and log filepath
+-h,--help               print out this help text
+
 ```
 `Ctrl-R`可以呼出菜单。
 

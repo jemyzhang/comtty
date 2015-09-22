@@ -7,6 +7,7 @@ void MSG_INFO(char *fmt,...);
 void MSG_ERR(char *fmt,...);
 
 typedef struct {
+    int  device;
     char sig_term;
     char sig_blockoutput;
     char sig_timestamp;

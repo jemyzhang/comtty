@@ -11,6 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <getopt.h>
 #include "_get_key.h"
 #include "com_op.h"
 #include "logging.h"
@@ -20,7 +21,7 @@
 
 #define CONFIG_FN "comtty.cfg"
 #define PACKSIZE 256
-#define VERSION_NUMBER "1.6.5"
+#define VERSION_NUMBER "1.6.6"
 
 static int gs_shmid;
 
@@ -28,14 +29,14 @@ char *pversion[] = {
         "\n------Software Information------\n",
         "   Version: "VERSION_NUMBER"\n",
         "   Create date: 2007.02.16\n",
-        "   Last update: 2015.09.09\n",
+        "   Last update: 2015.09.22\n",
         "   Author: JEMYZHANG\n",
-        "-------------------------------\n\n",
+        "-------------------------------",
         NULL,
 };
 
 char *pmenu[] = {
-        "\n---------COMTTY v."VERSION_NUMBER"---------\n",
+        "\n\33[42;37;1m--- SerialPort Tools v."VERSION_NUMBER" ---\33[0m\n",
         "  1.Send file...\n",
         "  2.Start to record log...\n",
         "  3.Clear screen...\n",
@@ -167,14 +168,14 @@ void cmd_shellmode(CTRL_INFO_t *ctrl_info)
     }
 }
 
-int __parent_process_func__ input_processor(int device)
+int __parent_process_func__ input_processor(int argc, char* argv[])
 {
 #define INPUT_BUF_SIZE 4096
     char* input_buf = (char *)malloc(INPUT_BUF_SIZE);
     int ret;
     CTRL_INFO_t *ctrl_info;
     ctrl_info = (CTRL_INFO_t *)shmat(gs_shmid, 0, 0);
-    memset(ctrl_info, 0, sizeof(CTRL_INFO_t));
+    int device = ctrl_info->device;
 
     while(!ctrl_info->sig_term) {
         int len = read_input_seq(0, 1, input_buf, INPUT_BUF_SIZE);
@@ -213,50 +214,52 @@ int __parent_process_func__ input_processor(int device)
                 } else {
                     pmenu[6] = "  6.Enable Timestamps...\n";
                 }
-                disp_dbg_menu();
-                switch (_get_input_num()) {
-                    case 0:
-                        printf("\n");
-                        ctrl_info->sig_term = 1;
-                        break;
-                    case 1:
-                        cmd_transfile(device);
-                        break;
-                    case 2:
-                        cmd_logfile(ctrl_info);
-                        break;
-                    case 3:
-                        printf("\33[2J");
-                        break;
-                    case 4:
-                        cmd_shellmode(ctrl_info);
-                        break;
-                    case 5:
-                        ret = reload_config(CONFIG_FN, config_g,
-                                            MAX_CONFIG_SZ);
-                        MSG_INFO("%s reload configurations...\n", (ret != -1 ? "Successfully" : "Failed"));
-                        break;
-                    case 6:
-                        if(ctrl_info->sig_timestamp)
-                        {
-                            ctrl_info->sig_timestamp = 0;
-                            MSG_INFO("Disable Timestamps\n");
-                        }else {
-                            ctrl_info->sig_timestamp = 1;
-                            MSG_INFO("Enable Timestamps\n");
-                        }
-                        break;
-                    case 7:
-                        disp_version();
-                        break;
-                    case -1:
-                        MSG_INFO("Abort Command Mode...\n");
-                        break;
-                    default:
-                        MSG_ERR("Command Error!\n");
-                        break;
+                while(1) {
+                    disp_dbg_menu();
+                    switch (_get_input_num()) {
+                        case 0:
+                            printf("\n");
+                            ctrl_info->sig_term = 1;
+                            break;
+                        case 1:
+                            cmd_transfile(device);
+                            break;
+                        case 2:
+                            cmd_logfile(ctrl_info);
+                            break;
+                        case 3:
+                            printf("\33[2J");
+                            break;
+                        case 4:
+                            cmd_shellmode(ctrl_info);
+                            break;
+                        case 5:
+                            ret = reload_config(CONFIG_FN, config_g,
+                                                MAX_CONFIG_SZ);
+                            MSG_INFO("%s reload configurations...\n", (ret != -1 ? "Successfully" : "Failed"));
+                            break;
+                        case 6:
+                            if (ctrl_info->sig_timestamp) {
+                                ctrl_info->sig_timestamp = 0;
+                                MSG_INFO("Disable Timestamps\n");
+                            } else {
+                                ctrl_info->sig_timestamp = 1;
+                                MSG_INFO("Enable Timestamps\n");
+                            }
+                            break;
+                        case 7:
+                            disp_version();
+                            continue;
+                        case -1:
+                            MSG_INFO("Abort Command Mode...\n");
+                            break;
+                        default:
+                            MSG_ERR("Command Error!\n");
+                            break;
+                    }
+                    ctrl_info->sig_blockoutput = 0;
+                    break;
                 }
-                ctrl_info->sig_blockoutput = 0;
                 break;
             default:
                 sendbytes(device, input_buf, len);
@@ -324,39 +327,39 @@ void check_report_screensize(char c, int dev)
     return;
 }
 
-int __child_process_func__ port_reader(int device)
+int __child_process_func__ port_reader(int argc, char* argv[])
 {
     CTRL_INFO_t *ctrl_info;
     ctrl_info = (CTRL_INFO_t *)shmat(gs_shmid, 0, 0);
-    memset(ctrl_info, 0, sizeof(CTRL_INFO_t));
-
+    int device = ctrl_info->device;
 
     get_ttywinSize(); //get win size first
     signal(SIGWINCH, ttywinSizeChanged);
 
     int buf_fds[2];
-    int buf_ena = 1; //enable block buffer
     if(pipe(buf_fds) < 0)
     {
-       buf_ena = 0;
+        perror("block output buffer: pipe()");
+        exit(EXIT_FAILURE);
     }
 
     int pid=fork();
     if(pid < 0)
     {
-        MSG_ERR("Abort...program corrupt!\n");
+        perror("port reader: fork()");
         exit(EXIT_FAILURE);
     }
+    int len = strlen(argv[0]);
     if(pid == 0)
     {
-        if(buf_ena) {
-            int flags = fcntl(buf_fds[0], F_GETFL);
-            fcntl(buf_fds[0], F_SETFL, flags | O_NONBLOCK);
-            close(buf_fds[1]); //close write
-        }
+
+        strncpy(argv[0], "com/blockbuffer", len);
+        int flags = fcntl(buf_fds[0], F_GETFL);
+        fcntl(buf_fds[0], F_SETFL, flags | O_NONBLOCK);
+        close(buf_fds[1]); //close write
         while(!ctrl_info->sig_term) {
             char c = 0;
-            if (buf_ena && ctrl_info->sig_blockoutput == 0) {
+            if (ctrl_info->sig_blockoutput == 0) {
                 while (read(buf_fds[0], &c, 1) > 0) {
                     write(STDOUT_FILENO, &c, 1);
                 }
@@ -379,50 +382,48 @@ int __child_process_func__ port_reader(int device)
         }
         if(log_pid == 0)
         {
+            strncpy(argv[0], "com/logger", len);
             log_to_file(ctrl_info, log_fds);
             return 0;
-        }
-        close(log_fds[0]); //close log read
-        while (!ctrl_info->sig_term) {
-            char c = 0;
-            if(buf_ena) {
+        }else {
+            strncpy(argv[0], "com/reader", len);
+            close(log_fds[0]); //close log read
+            while (!ctrl_info->sig_term) {
+                char c = 0;
                 close(buf_fds[0]); //close read
-            }
-            if (readbytes(device, &c, 1) > 0) {
-                char outbuf[64];
-                int buflen = 1;
-                outbuf[0] = c;
-                if(c == '\n' && ctrl_info->sig_timestamp)
-                {
-                    time_t timep;
-                    struct tm *p;
-                    time(&timep);
-                    p = localtime(&timep);
-                    sprintf(&outbuf[1], "\x1b[37;44m[%04d-%02d-%02d %02d:%02d:%02d]\x1b[0m ",
-                            (1900 + p->tm_year), p->tm_mon, p->tm_mday,
-                    p->tm_hour, p->tm_min, p->tm_sec);
-                    buflen = strlen(outbuf);
-                }
-                if (ctrl_info->sig_blockoutput == 0) {
-                    write(STDOUT_FILENO, outbuf, buflen);
-                } else {
-                    if(buf_ena) {
+                if (readbytes(device, &c, 1) > 0) {
+                    char outbuf[64];
+                    int buflen = 1;
+                    outbuf[0] = c;
+                    if (c == '\n' && ctrl_info->sig_timestamp) {
+                        time_t timep;
+                        struct tm *p;
+                        time(&timep);
+                        p = localtime(&timep);
+                        sprintf(&outbuf[1], "\x1b[37;44m[%04d-%02d-%02d %02d:%02d:%02d]\x1b[0m ",
+                                (1900 + p->tm_year), p->tm_mon, p->tm_mday,
+                                p->tm_hour, p->tm_min, p->tm_sec);
+                        buflen = strlen(outbuf);
+                    }
+                    if (ctrl_info->sig_blockoutput == 0) {
+                        write(STDOUT_FILENO, outbuf, buflen);
+                    } else {
                         //write to pipe
                         write(buf_fds[1], outbuf, buflen);
                     }
-                }
-                check_report_screensize(c, device);
+                    check_report_screensize(c, device);
 
-                if (ctrl_info->log_switch == 1) {
-                    write(log_fds[1], outbuf, buflen);
+                    if (ctrl_info->log_switch == 1) {
+                        write(log_fds[1], outbuf, buflen);
 //                    put_log(ctrl_info->log_path, &c, 1);
+                    }
                 }
+                usleep(10);
             }
-            usleep(10);
+            close(log_fds[1]);
+            close(buf_fds[1]);
+            wait(NULL);
         }
-        close(log_fds[1]);
-        close(buf_fds[1]);
-        wait(NULL);
     }
 
     shmdt(ctrl_info);
@@ -494,6 +495,7 @@ void port_connection_monitor(const char* pdevname)
                            event->mask & IN_ATTRIB)
                         {
                             fprintf(stderr, "\nSerial port deviced was removed!\n");
+                            close(ctrl_info->device);
                             ctrl_info->sig_term = 1;
                         }
                     }
@@ -505,46 +507,134 @@ void port_connection_monitor(const char* pdevname)
     return;
 }
 
+char *helptext[] =
+{
+        "-c,--config\t\tconfigure file path",
+        "-g,--generate\t\tgenerate default configure file,\n\t\t\tif the configure file is not exists",
+        "-p,--port\t\tport device",
+        "-b,--bandrate\t\tbaundrate",
+        "-d,--databits\t\tdatabits",
+        "-s,--stopbit\t\tstopbit",
+        "-r,--parity\t\tparity",
+        "-l,--log\t\tstart log and log filepath",
+        "-h,--help\t\tprint out this help text",
+        NULL,
+};
+
+void help()
+{
+    char *p;
+    int i = 0;
+    while((p = helptext[i++]) != NULL)
+    {
+        printf("%s\n",p);
+    }
+}
+
+struct option options[] =
+        {
+                {"generate", no_argument, 0, 'g'},
+                {"config", required_argument,0,'c'},
+                {"port", required_argument,0,'p'},
+                {"baudrate", required_argument,0,'b'},
+                {"databits", required_argument,0,'d'},
+                {"stopbit", required_argument,0,'s'},
+                {"parity", required_argument,0,'r'},
+                {"log", required_argument,0,'l'},
+                {"help", no_argument, 0,'h'},
+                {0,0,0,0}
+        };
+
 int main(int argc, char *argv[])
 {
     pid_t pid;
     int fdevice;
     char *val;
     COM_CONFIG_t config;
+    char *cfgfn = CONFIG_FN;
+    int opt,opt_idx;
+    char gen_config = 0;
+    char arg_log = 0;
+    char* arg_logpath;
+    memset(&config,-1,sizeof(config));
 
-    memset(config_g, 0, sizeof(config_g));
-    if(load_config(CONFIG_FN, config_g, MAX_CONFIG_SZ) == -1)
+    while((opt = getopt_long(argc,argv,"hgc:p:b:d:s:r:l:",options, &opt_idx)) != -1)
     {
-        config_create_default(CONFIG_FN, config_g, MAX_CONFIG_SZ);
+        switch(opt)
+        {
+            case 'g':
+                gen_config = 1;
+                break;
+            case 'c':
+                cfgfn = optarg;
+                break;
+            case 'p':
+                strcpy(config.portname,optarg);
+                break;
+            case 'b':
+                config.baudrate = atoi(optarg);
+                break;
+            case 'd':
+                config.databits = atoi(optarg);
+                break;
+            case 's':
+                config.stopbit = atoi(optarg);
+                break;
+            case 'r':
+                config.parity = optarg[0];
+                break;
+            case 'l':
+                arg_log = 1;
+                arg_logpath = optarg;
+                break;
+            case 'h':
+            default:
+                help();
+                return 0;
+        }
     }
 
-    config.baudrate = 115200;
-    config.databits = 8;
-    config.stopbit = 1;
-    config.parity = 'N';
-    strcpy(config.portname, "/dev/ttyS0");
 
-    if((val =config_getvalue("PortName", config_g)) != NULL)
+    //load config from file
+    if(load_config(cfgfn, config_g, MAX_CONFIG_SZ) == -1)
+    {
+        if(gen_config) {
+            if( -1 == config_create_default(cfgfn, config_g, MAX_CONFIG_SZ))
+            {
+                printf("Failed to generate the configure file: %s\n",cfgfn);
+                return 0;
+            }
+        }else{
+            perror(cfgfn);
+            return 0;
+        }
+    }
+
+    if(config.portname[0] == -1 &&
+            (val =config_getvalue("PortName", config_g)) != NULL)
     {
         strcpy(config.portname, val);
     }
 
-    if((val =config_getvalue("Baudrate", config_g)) != NULL)
+    if(config.baudrate == -1 &&
+            (val =config_getvalue("Baudrate", config_g)) != NULL)
     {
         config.baudrate = atoi(val);
     }
 
-    if((val = config_getvalue("DataBits", config_g)) != NULL)
+    if(config.databits == -1 &&
+            (val = config_getvalue("DataBits", config_g)) != NULL)
     {
         config.databits = atoi(val);
     }
 
-    if((val = config_getvalue("StopBit", config_g)) != NULL)
+    if(config.stopbit == -1 &&
+            (val = config_getvalue("StopBit", config_g)) != NULL)
     {
         config.stopbit = atoi(val);
     }
 
-    if((val = config_getvalue("Parity", config_g)) != NULL)
+    if(config.parity == -1 && (val = config_getvalue("Parity", config_g)) != NULL)
     {
         config.parity = (int)(*val);
     }
@@ -558,7 +648,6 @@ int main(int argc, char *argv[])
                             config.stopbit,
                             config.parity) < 0)
         {
-            perror("setup serial");
             close(fdevice);
             exit(EXIT_FAILURE);
         }
@@ -578,6 +667,16 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    CTRL_INFO_t *ctrl_info = (CTRL_INFO_t *)shmat(gs_shmid, 0, 0);
+    memset(ctrl_info, 0, sizeof(CTRL_INFO_t));
+    ctrl_info->device = fdevice;
+    if(arg_log != 0)
+    {
+        ctrl_info->log_switch = 1;
+        strcpy(ctrl_info->log_path,arg_logpath);
+    }
+
+    int len = strlen(argv[0]);
     pid=fork();
     if(pid < 0)
     {
@@ -587,10 +686,12 @@ int main(int argc, char *argv[])
     }
     else if(pid == 0)
     {
-        printf("\33[2J");
-        printf("\33[41m\33[32m Serial TTY Debuger ver %s \33[0m\n", VERSION_NUMBER);
-        printf("\33[41m\33[32m Ctrl-R for Menu            \33[0m\n");
-        port_reader(fdevice);
+//        printf("\33[2J");
+        printf("\33[42;37;1m SerialPort Tools ver %s \33[0m\n", VERSION_NUMBER);
+        printf("\33[42;37m %s %d %d,%c,%d  \33[0m\n",
+        config.portname, config.baudrate, config.databits, config.parity, config.stopbit);
+        printf("\33[42;37m Ctrl-R for Menu            \33[0m\n");
+        port_reader(argc,argv);
     }
     else
     {
@@ -603,8 +704,10 @@ int main(int argc, char *argv[])
         }
         if(ppid == 0)
         {
-            input_processor(fdevice);
+            strncpy(argv[0], "com/input", len);
+            input_processor(argc,argv);
         }else {
+            strncpy(argv[0], "com/monitor", len);
             port_connection_monitor(config.portname);
             kill(ppid, SIGTERM);
             wait(NULL);
