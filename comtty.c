@@ -12,6 +12,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <getopt.h>
+#include <sys/types.h>
+#include <pwd.h>
 #include "_get_key.h"
 #include "com_op.h"
 #include "logging.h"
@@ -22,6 +24,8 @@
 #define CONFIG_FN "comtty.cfg"
 #define PACKSIZE 256
 #define VERSION_NUMBER "1.6.6"
+
+static char gs_config_path[256];
 
 static int gs_shmid;
 
@@ -234,7 +238,7 @@ int __parent_process_func__ input_processor(int argc, char* argv[])
                             cmd_shellmode(ctrl_info);
                             break;
                         case 5:
-                            ret = reload_config(CONFIG_FN, config_g,
+                            ret = reload_config(gs_config_path, config_g,
                                                 MAX_CONFIG_SZ);
                             MSG_INFO("%s reload configurations...\n", (ret != -1 ? "Successfully" : "Failed"));
                             break;
@@ -551,7 +555,7 @@ int main(int argc, char *argv[])
     int fdevice;
     char *val;
     COM_CONFIG_t config;
-    char *cfgfn = CONFIG_FN;
+    char *cfgfn = NULL;
     int opt,opt_idx;
     char gen_config = 0;
     char arg_log = 0;
@@ -594,18 +598,27 @@ int main(int argc, char *argv[])
         }
     }
 
+    if(cfgfn == NULL) {
+      const char *homedir;
+      if((homedir = getenv("HOME")) == NULL) {
+        homedir = getpwuid(getuid())->pw_dir;
+      }
+      sprintf(gs_config_path, "%s/.config/%s", homedir, CONFIG_FN);
+    } else {
+      sprintf(gs_config_path, "%s", cfgfn);
+    }
 
     //load config from file
-    if(load_config(cfgfn, config_g, MAX_CONFIG_SZ) == -1)
+    if(load_config(gs_config_path, config_g, MAX_CONFIG_SZ) == -1)
     {
         if(gen_config) {
-            if( -1 == config_create_default(cfgfn, config_g, MAX_CONFIG_SZ))
+            if( -1 == config_create_default(gs_config_path, config_g, MAX_CONFIG_SZ))
             {
-                printf("Failed to generate the configure file: %s\n",cfgfn);
+                printf("Failed to generate the configure file: %s\n",gs_config_path);
                 return 0;
             }
         }else{
-            perror(cfgfn);
+            perror(gs_config_path);
             return 0;
         }
     }
