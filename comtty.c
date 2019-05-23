@@ -5,6 +5,7 @@
 #include <sys/shm.h>
 #include <sys/inotify.h>
 #include <sys/poll.h>
+#include <sys/time.h>
 #include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -396,17 +397,18 @@ int __child_process_func__ port_reader(int argc, char* argv[])
                 char c = 0;
                 close(buf_fds[0]); //close read
                 if (readbytes(device, &c, 1) > 0) {
-                    char outbuf[64];
+                    char outbuf[128];
                     int buflen = 1;
                     outbuf[0] = c;
                     if (c == '\n' && ctrl_info->sig_timestamp) {
-                        time_t timep;
-                        struct tm *p;
-                        time(&timep);
-                        p = localtime(&timep);
-                        sprintf(&outbuf[1], "\x1b[37;44m[%04d-%02d-%02d %02d:%02d:%02d]\x1b[0m ",
-                                (1900 + p->tm_year), p->tm_mon, p->tm_mday,
-                                p->tm_hour, p->tm_min, p->tm_sec);
+                        struct tm* tm_info;
+                        struct timeval tv;
+
+                        gettimeofday(&tv, NULL);
+                        tm_info = localtime(&tv.tv_sec);
+                        sprintf(&outbuf[1], "\x1b[37;44m[%04d-%02d-%02d %02d:%02d:%02d.%03ld]\x1b[0m ",
+                                (1900 + tm_info->tm_year), tm_info->tm_mon, tm_info->tm_mday,
+                                tm_info->tm_hour, tm_info->tm_min, tm_info->tm_sec, tv.tv_usec / 1000 );
                         buflen = strlen(outbuf);
                     }
                     if (ctrl_info->sig_blockoutput == 0) {
@@ -421,8 +423,9 @@ int __child_process_func__ port_reader(int argc, char* argv[])
                         write(log_fds[1], outbuf, buflen);
 //                    put_log(ctrl_info->log_path, &c, 1);
                     }
+                } else {
+                    usleep(10);
                 }
-                usleep(10);
             }
             close(log_fds[1]);
             close(buf_fds[1]);

@@ -9,7 +9,7 @@ else
 SYS_LIBS=
 endif
 CC = gcc
-CFLAGS = -Wall -g
+CFLAGS = -Wall -O2 -g
 
 all: $(TARGET)
 $(TARGET): $(LIBS) $(OBJS) $(SRC)
