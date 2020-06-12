@@ -3,10 +3,11 @@ TARGET = comtty
 SRC = comtty.c
 OBJS = _get_key.o com_op.o logging.o filedlg.o config.o common.o
 LIBS = libcomtty.a
-ifeq ($(ARCH), cygwin)
-SYS_LIBS = /lib/w32api/libcomdlg32.a
+SYS_LIBS := -lpthread
+ifeq ($(ARCH), CYGWIN_NT-6.1)
+SYS_LIBS += /lib/w32api/libcomdlg32.a
 else
-SYS_LIBS=
+SYS_LIBS +=
 endif
 CC = gcc
 CFLAGS = -Wall -O2 -g

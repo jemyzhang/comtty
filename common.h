@@ -3,16 +3,18 @@
 
 #include <stdio.h>
 
-void MSG_INFO(char *fmt,...);
-void MSG_ERR(char *fmt,...);
+void MSG_INFO(char *fmt, ...);
+void MSG_ERR(char *fmt, ...);
 
 typedef struct {
-    int  device;
-    char sig_term;
-    char sig_blockoutput;
-    char sig_timestamp;
-    char log_switch;
-    char log_path[1024];
+  int device;
+  char sig_term;
+  char sig_blockoutput;
+  char sig_timestamp;
+  char log_switch;
+  char log_path[1024];
+  int term_pipe_fd;
+  int log_pipe_fd;
 } CTRL_INFO_t;
 
 long get_file_size(FILE *fp);
